@@ -76,10 +76,6 @@ asyncio
 
 ## 🛠️ 开发者笔记
 
-路径管理：程序使用 utils.get_resource_path 兼容 PyInstaller 打包后的路径。
-多进程保护：在 main.py 中使用了 multiprocessing.freeze_support()，防止在 Windows 打包环境下启动死循环。
-日志自动清理：系统日志超过 500 行会自动清理前 100 行，以防内存泄漏导致卡顿。
-
 本项目基于<a href="https://github.com/ccc007ccc/HeartRateMonitor">[HeartRateMonitor]</a>的功能逻辑进行二次开发。
 通过对底层代码的彻底重构与逻辑优化，显著增强了系统的可扩展性与维护性。大幅提升了运行效率及稳定性。
 
