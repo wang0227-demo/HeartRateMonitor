@@ -1,0 +1,55 @@
+[
+    {
+        "name": "飞书/钉钉机器人 (高心率报警)",
+        "enabled": false,
+        "url": "https://open.feishu.cn/open-apis/bot/v2/hook/****",
+        "triggers": [
+            "heart_rate_updated"
+        ],
+        "threshold": 130,
+        "cooldown": 300,
+        "body": "{\"msg_type\": \"text\", \"content\": {\"text\": \"🚨 监测到异常高心率！\\n当前数值：{bpm} BPM\\n事件详情：{event}\\n请注意休息。\"}}",
+        "headers": "{\"Content-Type\": \"application/json\"}",
+        "max_retries": 2
+    },
+    {
+        "name": "IFTTT 智能家居 (开启风扇/报警灯)",
+        "enabled": false,
+        "url": "https://maker.ifttt.com",
+        "triggers": [
+            "heart_rate_updated"
+        ],
+        "threshold": 140,
+        "cooldown": 600,
+        "body": "{\"value1\": \"{bpm}\", \"value2\": \"{event}\"}",
+        "headers": "{\"Content-Type\": \"application/json\"}",
+        "max_retries": 1
+    },
+    {
+        "name": "设备状态监控 (连接/断开通知)",
+        "enabled": false,
+        "url": "https://httpbin.org",
+        "triggers": [
+            "connected",
+            "disconnected"
+        ],
+        "threshold": 0,
+        "cooldown": 0,
+        "body": "{\"device_status\": \"{event}\", \"timestamp\": \"{bpm}\"}",
+        "headers": "{\"Content-Type\": \"application/json\"}",
+        "max_retries": 3
+    },
+    {
+        "name": "自定义 API (数据存档)",
+        "enabled": false,
+        "url": "http://127.0.0.1",
+        "triggers": [
+            "heart_rate_updated"
+        ],
+        "threshold": 60,
+        "cooldown": 1,
+        "body": "{\"bpm\": \"{bpm}\", \"type\": \"log\"}",
+        "headers": "{\"Authorization\": \"Bearer YOUR_TOKEN\"}",
+        "max_retries": 0
+    }
+]
