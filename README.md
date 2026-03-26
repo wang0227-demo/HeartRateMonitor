@@ -59,6 +59,7 @@ asyncio
 在主界面“WebSocket 服务器”栏勾选“启用” 。
 在 OBS 中添加一个“浏览器源”，URL 指向你的本地 OBS 页面模板，并连接到 ws://127.0.0.1:8001。
 若心率重置，WebSocket 会同步发送 max_heart_rate: 0 。
+
 <img src="https://github.com/wang0227-demo/HeartRateMonitor/blob/master/resources/OBS.png" width="450"/>
 
 三、Webhook 报警设置
