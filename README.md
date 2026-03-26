@@ -5,6 +5,8 @@
 支持悬浮窗显示，适用于全屏游戏等 支持直播时实时显示心率 PEAK 以及
 提供丝滑的实时波形展示，并支持多种第三方联动（VRChat OSC、WebSocket、Webhooks）。
 
+<img src="https://github.com/wang0227-demo/HeartRateMonitor/blob/master/resources/GUI.png" width="450"/>
+
 ## 🌟 核心功能
 
 - **高性能波形图**：采用区间锁定（0-50, 50-100, 100-150, 150-200）和滞后缓冲区逻辑，提供低 CPU 占用的丝滑视觉体验。
