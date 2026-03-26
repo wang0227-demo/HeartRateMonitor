@@ -2,7 +2,7 @@
 
 这是一个基于 Python 和 Tkinter 开发的高性能实时心率监控系统。
 它能够通过蓝牙 (BLE) 连接心率设备(支持小米手环、华为手环和手表以及心率带还有其他品牌的智能手环和手表等支持心率广播的设备)，
-支持悬浮窗显示，适用于全屏游戏等 支持直播时实时显示心率 PEAK 以及
+支持悬浮窗显示，适用于全屏游戏等多种场景。支持直播时实时显示心率 PEAK 以及
 提供丝滑的实时波形展示，并支持多种第三方联动（VRChat OSC、WebSocket、Webhooks）。
 
 <img src="https://github.com/wang0227-demo/HeartRateMonitor/blob/master/resources/GUI.png" width="450"/>
