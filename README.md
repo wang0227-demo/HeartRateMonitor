@@ -27,19 +27,19 @@
 
 ## 🛠️ 依赖项清单
 
-# 核心蓝牙驱动
+核心蓝牙驱动
 bleak>=0.21.1
 
-# VRChat OSC 支持
+VRChat OSC 支持
 python-osc>=1.8.3
 
-# WebSocket 支持
+WebSocket 支持
 websockets>=12.0
 
-# 图像处理 (用于主窗口及悬浮窗图标)
+图像处理 (用于主窗口及悬浮窗图标)
 Pillow>=10.0.0
 
-# 异步兼容性支持 (部分旧版 Python 可能需要)
+异步兼容性支持 (部分旧版 Python 可能需要)
 asyncio
 
 
