@@ -8,10 +8,12 @@ import time
 from urllib import request, error
 from typing import Callable, Optional, List, Dict
 
+
+
 # 定义 Webhook 的独立配置文件
 WEBHOOK_CONFIG_FILE = "config_webhook.json"
 # 定义 GitHub 仓库中的预设文件 URL
-GITHUB_CONFIG_URL = "https://ghproxy.net/https://raw.githubusercontent.com/wang0227-demo/demo/refs/heads/main/config_webhook.json"
+GITHUB_CONFIG_URL = "https://ghproxy.net/https://raw.githubusercontent.com/wang0227-demo/HeartRateMonitor/refs/heads/main/config_webhook.json"
 
 class WebhookManager:
     """
@@ -25,7 +27,8 @@ class WebhookManager:
         
         # --- 智能过滤状态控制 ---
         self.last_trigger_times: Dict[str, float] = {}  # 记录每个 Webhook 上次触发的时间
-        self.default_threshold = 120                   # 默认报警阈值
+        self.default_threshold_low = 60                   # 默认报警阈值
+        self.default_threshold_high = 120                 # 默认报警阈值
         self.default_cooldown = 60                     # 默认冷却时间 (秒)
         # --- [新增] 异步队列化核心组件 ---
         self.task_queue = queue.Queue()
@@ -96,7 +99,7 @@ class WebhookManager:
         event_map = {
             "connected": "设备已连接",
             "disconnected": "设备已断开",
-            "heart_rate_updated": f"⚠️ 高心率报警: {heart_rate}bpm"
+            "heart_rate_updated": f"心率异常"
         }
 
         for index, config in enumerate(self.webhooks):
@@ -110,8 +113,9 @@ class WebhookManager:
             # --- 智能过滤逻辑 ---
             if event_type == "heart_rate_updated":
                 # 1. 检查阈值：如果当前心率低于配置的阈值，则跳过
-                threshold = config.get("threshold", self.default_threshold)
-                if heart_rate < threshold:
+                threshold_low = config.get("threshold_low", self.default_threshold_low)
+                threshold_high = config.get("threshold_high", self.default_threshold_high)
+                if threshold_low < heart_rate < threshold_high:
                     continue
                 
                 # 2. 检查冷却时间：防止频繁发送
@@ -124,7 +128,7 @@ class WebhookManager:
                 
                 # 符合条件，更新触发时间
                 self.last_trigger_times[webhook_id] = current_time
-                self.logger(f"[{config.get('name')}] 满足触发条件: 心率 {heart_rate} >= {threshold}")
+                self.logger(f"[{config.get('name')}] 当前心率{heart_rate}满足触发条件:（心率 ≥ {threshold_high} or 心率 ≤ {threshold_low}）")
 
             # --- 准备并发送请求 ---
             body_str = config.get("body", "{}").replace("{event}", event_map.get(event_type, event_type))
@@ -133,15 +137,10 @@ class WebhookManager:
             self.logger(f"[{config.get('name')}] 已加入发送队列")
 
     def _execute_http_request(self, config: Dict, heart_rate: int, is_test: bool = False, 
-                      custom_body: Optional[str] = None, retry_count: int = 0):
-        """
-        执行 HTTP POST 请求，并在失败时自动重试。
-        retry_count: 当前重试次数
-        """
-        """被 worker_loop 调用，执行具体的网络 IO"""
+                          custom_body: Optional[str] = None, retry_count: int = 0):
         webhook_name = config.get("name", "Unknown")
-        max_retries = config.get("max_retries", 2)  # 默认失败后重试 2 次
-        retry_delay = 5  # 失败后等待 5 秒重试
+        max_retries = config.get("max_retries", 2)
+        retry_delay = 5
 
         def log_msg(msg):
             if is_test and self.response_logger: self.response_logger(msg)
@@ -151,39 +150,42 @@ class WebhookManager:
             bpm_str = str(heart_rate) if heart_rate > 0 else "N/A"
             url = config.get("url", "").replace("{bpm}", bpm_str)
             
+            # 校验 URL
             if not url.startswith(('http://', 'https://')):
                 log_msg(f"[{webhook_name}] 发送失败: URL无效")
                 return
 
+            # 准备数据
             headers_str = config.get("headers", "{}").replace("{bpm}", bpm_str)
             body_str = (custom_body if custom_body else config.get("body", "{}")).replace("{bpm}", bpm_str)
-
             headers = json.loads(headers_str)
-            if 'Content-Type' not in headers: headers['Content-Type'] = 'application/json'
+            if 'Content-Type' not in headers: 
+                headers['Content-Type'] = 'application/json'
             
             data = body_str.encode('utf-8')
+
+
             req = request.Request(url, data=data, headers=headers, method='POST')
 
+            # 执行请求
             with request.urlopen(req, timeout=8) as response:
                 status = response.status
                 log_msg(f"✅ Webhook [{webhook_name}] 发送成功 ({status})")
+                # 如果是测试模式，打印出飞书的返回内容方便调试
+                if is_test:
+                    resp_data = response.read().decode('utf-8', errors='ignore')
+                    log_msg(f"飞书返回: {resp_data}")
 
-                resp_data = response.read().decode('utf-8', errors='ignore')
-                log_msg(f"✅ Webhook [{webhook_name}] 发送成功 ({response.status})")
-        
         except Exception as e:
-            # 判断是否需要重试
             if retry_count < max_retries:
                 next_retry = retry_count + 1
-                log_msg(f"❌ Webhook [{webhook_name}] 失败: {str(e)}。将在 {retry_delay}秒后进行第 {next_retry} 次重试({next_retry}/{max_retries})")
-                
-                # 使用 Timer 在指定延迟后重新开启线程执行发送，不阻塞当前线程
-                # 巧妙处理：使用 Timer 在 5 秒后将任务重新放入队列末尾
+                log_msg(f"❌ [{webhook_name}] 失败: {e}。{retry_delay}秒后进行第 {next_retry} 次重试")
                 threading.Timer(retry_delay, lambda: self.task_queue.put(
                     (config, heart_rate, is_test, custom_body, next_retry)
                 )).start()
             else:
-                log_msg(f"🚨 Webhook [{webhook_name}] 最终发送失败，已达最大重试次数 ({max_retries})。错误: {str(e)}")
+                log_msg(f"🚨 [{webhook_name}] 最终失败: {e}")
+
 
     def sync_from_github(self) -> tuple[bool, str]:
         """从 GitHub 下载最新的预设配置文件"""
@@ -209,7 +211,7 @@ class WebhookManager:
         self.logger(f"[{config.get('name')}] 测试请求已加入队列")
 
     def save_webhooks(self):
-        """[核心补全] 将当前 Webhook 列表保存到本地 config_webhook.json"""
+        """ 将当前 Webhook 列表保存到本地 config_webhook.json"""
         try:
             with open(WEBHOOK_CONFIG_FILE, "w", encoding="utf-8") as f:
                 json.dump(self.webhooks, f, indent=4, ensure_ascii=False)
@@ -217,3 +219,88 @@ class WebhookManager:
         except IOError as e:
             self.logger(f"保存配置文件失败: {e}")
 
+import requests
+import hashlib
+import subprocess
+import hmac
+import base64
+import time
+import json
+import re
+from datetime import datetime
+from utils import CURRENT_VERSION
+
+class UserTracker:
+    # 填入你从飞书机器人后台获取的 Secret
+    WEBHOOK_SECRET = "ibXsLlfiNu2rTSat3CjANg"  
+
+    @staticmethod
+    def gen_sign(secret, timestamp):
+        """生成飞书签名校验字符串"""
+        string_to_sign = f'{timestamp}\n{secret}'
+        hmac_code = hmac.new(string_to_sign.encode("utf-8"), digestmod=hashlib.sha256).digest()
+        return base64.b64encode(hmac_code).decode('utf-8')
+
+    @staticmethod
+    def get_info():
+        """获取机器码和地理位置"""
+        # 1. 机器码
+        try:
+            cmd = "wmic csproduct get uuid"
+            mid_raw = subprocess.check_output(cmd, shell=True, stderr=subprocess.DEVNULL).decode().strip().split('\n')[-1].strip()
+            mid = hashlib.md5(mid_raw.encode()).hexdigest().upper()[:12]
+        except:
+            mid = "UNKNOWN"
+
+        # 2. 地理位置
+        loc = "未知"
+        try:
+            # 修正了 pconline 的返回解析，它默认返回文本，通常需要指定 json 或 text
+            r = requests.get("https://whois.pconline.com.cn/ipJson.jsp?json=true", timeout=2)
+            loc = f"{r.json().get('city')}"
+        except:
+            r = requests.get("https://api.ip.sb/geoip", timeout=2)
+            loc = f"{r.json().get('city')}"
+            pass
+        return mid, loc
+
+
+    @staticmethod
+    def send_to_feishu(webhook_url):
+        """发送统计卡片"""
+        mid, loc = UserTracker.get_info()
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        # 生成时间戳和签名
+        ts = str(int(time.time()))
+        signature = UserTracker.gen_sign(UserTracker.WEBHOOK_SECRET, ts)
+        
+        payload = {
+            "timestamp": ts,      # 对应顶层字段
+            "sign": signature,     # 对应顶层字段
+            "msg_type": "interactive",
+            "card": {
+                "header": {
+                    "title": {"tag": "plain_text", "content": "🔔 HeartRateMonitor - 用户上线"},
+                    "template": "green"
+                },
+                "elements": [
+                    {
+                        "tag": "div",
+                        "fields": [
+                            {"is_short": True, "text": {"tag": "lark_md", "content": f"**用户ID:**\n{mid}"}},
+                            {"is_short": True, "text": {"tag": "lark_md", "content": f"**地理位置:**\n{loc}"}},
+                            {"is_short": False, "text": {"tag": "lark_md", "content": f"**上线时间:**\n{now}"}}
+                        ]
+                    },
+                    {"tag": "hr"},
+                    {"tag": "note", "elements": [{"tag": "plain_text", "content": f"HeartRateMonitor版本: {CURRENT_VERSION}"}]}
+                ]
+            }
+        }
+        
+        try:
+            r = requests.post(webhook_url, json=payload, timeout=5)
+            #print(r.json()) # 调试时可以打开，查看是否报错
+        except Exception as e:
+            pass
+            #print(f"发送失败: {e}") # 调试时可以打开，查看是否报错

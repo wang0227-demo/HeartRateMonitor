@@ -1,55 +1,55 @@
 [
     {
-        "name": "飞书/钉钉机器人 (高心率报警)",
-        "enabled": false,
-        "url": "https://open.feishu.cn/open-apis/bot/v2/hook/****",
+        "enabled": true,
+        "name": "飞书机器人 (心率异常报警)",
+        "url": "https://open.feishu.cn/open-apis/bot/v2/hook/59bbd34e-69d6-46d7-a9fa-755f117fd0de",
         "triggers": [
             "heart_rate_updated"
         ],
-        "threshold": 130,
-        "cooldown": 300,
-        "body": "{\"msg_type\": \"text\", \"content\": {\"text\": \"🚨 监测到异常高心率！\\n当前数值：{bpm} BPM\\n事件详情：{event}\\n请注意休息。\"}}",
-        "headers": "{\"Content-Type\": \"application/json\"}",
-        "max_retries": 2
+        "threshold_low": 60,
+        "threshold_high": 120,
+        "cooldown": 120,
+        "body": "{\"msg_type\": \"text\", \"content\": {\"text\": \"🚨 监测到心率异常！-HeartRateMonitor\\n当前数值：{bpm} BPM\\n事件详情：{event}\\n请注意休息。\"}}",
+        "headers": "{\"Content-Type\": \"application/json\"}"
     },
     {
-        "name": "IFTTT 智能家居 (开启风扇/报警灯)",
         "enabled": false,
+        "name": "IFTTT 智能家居 (开启风扇/报警灯)",
         "url": "https://maker.ifttt.com",
         "triggers": [
             "heart_rate_updated"
         ],
-        "threshold": 140,
-        "cooldown": 600,
+        "threshold_low": 60,
+        "threshold_high": 120,
+        "cooldown": 60,
         "body": "{\"value1\": \"{bpm}\", \"value2\": \"{event}\"}",
-        "headers": "{\"Content-Type\": \"application/json\"}",
-        "max_retries": 1
+        "headers": "{\"Content-Type\": \"application/json\"}"
     },
     {
-        "name": "设备状态监控 (连接/断开通知)",
         "enabled": false,
+        "name": "设备状态监控 (连接/断开通知)",
         "url": "https://httpbin.org",
         "triggers": [
             "connected",
             "disconnected"
         ],
-        "threshold": 0,
-        "cooldown": 0,
+        "threshold_low": 60,
+        "threshold_high": 120,
+        "cooldown": 60,
         "body": "{\"device_status\": \"{event}\", \"timestamp\": \"{bpm}\"}",
-        "headers": "{\"Content-Type\": \"application/json\"}",
-        "max_retries": 3
+        "headers": "{\"Content-Type\": \"application/json\"}"
     },
     {
-        "name": "自定义 API (数据存档)",
         "enabled": false,
+        "name": "自定义 API (数据存档)",
         "url": "http://127.0.0.1",
         "triggers": [
             "heart_rate_updated"
         ],
-        "threshold": 60,
-        "cooldown": 1,
+        "threshold_low": 60,
+        "threshold_high": 120,
+        "cooldown": 60,
         "body": "{\"bpm\": \"{bpm}\", \"type\": \"log\"}",
-        "headers": "{\"Authorization\": \"Bearer YOUR_TOKEN\"}",
-        "max_retries": 0
+        "headers": "{\"Authorization\": \"Bearer YOUR_TOKEN\"}"
     }
 ]

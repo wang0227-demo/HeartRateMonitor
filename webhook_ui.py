@@ -32,7 +32,8 @@ class WebhookWindow(tk.Toplevel):
         self.trigger_connect_var = tk.BooleanVar(value=False)
         self.trigger_disconnect_var = tk.BooleanVar(value=False)
         self.trigger_hr_update_var = tk.BooleanVar(value=True)
-        self.threshold_var = tk.StringVar(value="120")
+        self.threshold_low_var = tk.StringVar(value="60")
+        self.threshold_high_var = tk.StringVar(value="120")
         self.cooldown_var = tk.StringVar(value="60")
 
         self._setup_ui()
@@ -89,8 +90,10 @@ class WebhookWindow(tk.Toplevel):
         # 智能过滤设置
         filter_frame = ttk.LabelFrame(details_frame, text="心率报警过滤 (仅限心率刷新触发)", padding=10)
         filter_frame.grid(row=4, column=0, columnspan=2, sticky="ew", pady=5)
-        ttk.Label(filter_frame, text="报警阈值 (BPM) ≥").pack(side=tk.LEFT)
-        ttk.Entry(filter_frame, textvariable=self.threshold_var, width=8).pack(side=tk.LEFT, padx=5)
+        ttk.Label(filter_frame, text="报警阈值Low ≤").pack(side=tk.LEFT)
+        ttk.Entry(filter_frame, textvariable=self.threshold_low_var, width=8).pack(side=tk.LEFT, padx=5)
+        ttk.Label(filter_frame, text="报警阈值High ≥").pack(side=tk.LEFT)
+        ttk.Entry(filter_frame, textvariable=self.threshold_high_var, width=8).pack(side=tk.LEFT, padx=5)
         ttk.Label(filter_frame, text="冷却时间 (秒)").pack(side=tk.LEFT, padx=(15, 0))
         ttk.Entry(filter_frame, textvariable=self.cooldown_var, width=8).pack(side=tk.LEFT, padx=5)
 
@@ -144,7 +147,8 @@ class WebhookWindow(tk.Toplevel):
         self.trigger_hr_update_var.set("heart_rate_updated" in trigs)
         
         # 过滤参数回填
-        self.threshold_var.set(str(config.get("threshold", 120)))
+        self.threshold_low_var.set(str(config.get("threshold_low", 60)))
+        self.threshold_high_var.set(str(config.get("threshold_high", 120)))
         self.cooldown_var.set(str(config.get("cooldown", 60)))
         
         # 文本回填
@@ -184,7 +188,8 @@ class WebhookWindow(tk.Toplevel):
             "name": self.name_var.get().strip() or "未命名",
             "url": self.url_var.get().strip(),
             "triggers": trigs,
-            "threshold": int(self.threshold_var.get() or 120),
+            "threshold_low": int(self.threshold_low_var.get() or 60),
+            "threshold_high": int(self.threshold_high_var.get() or 120),
             "cooldown": int(self.cooldown_var.get() or 60),
             "body": body_raw or "{}",
             "headers": headers_raw or "{}"
@@ -210,7 +215,8 @@ class WebhookWindow(tk.Toplevel):
         self.trigger_connect_var.set(False)
         self.trigger_disconnect_var.set(False)
         self.trigger_hr_update_var.set(True)
-        self.threshold_var.set("120")
+        self.threshold_low_var.set("60")
+        self.threshold_high_var.set("120")
         self.cooldown_var.set("60")
         self.body_text.delete("1.0", tk.END)
         self.body_text.insert("1.0", '{"event": "{event}", "bpm": "{bpm}"}')

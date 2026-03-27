@@ -152,6 +152,22 @@ class HeartRateMonitor:
         self.update_heart_rate_display()       
         self.load_settings()
 
+        #self._trigger_feishu_stats()
+
+    def _trigger_feishu_stats(self):
+        def task():
+            # 自动寻找配置里已开启的飞书 Webhook
+            for hook in self.webhook_manager.get_webhooks():
+                url = hook.get("url", "")
+                if "open.feishu.cn" in url and hook.get("enabled"):
+                    from webhook_manager import UserTracker
+                    UserTracker.send_to_feishu(url)
+                    break 
+        
+        # 开启线程异步运行，绝对不卡界面
+        import threading
+        threading.Thread(target=task, daemon=True).start()
+
     def apply_global_icon(self, window):
         """为传入的窗口应用全局图标"""
         try:
@@ -462,7 +478,10 @@ class HeartRateMonitor:
                     # [核心新增] 更新波形图数据
                     if self.waveform:
                         self.waveform.push_data(bpm)
-                    
+
+                    # 添加 Webhook 触发 
+                    if hasattr(self, 'webhook_manager'):
+                        self.webhook_manager.trigger_event("heart_rate_updated", bpm)
                     # 更新悬浮窗
                     if self.floating_window and self.floating_window.is_open():
                         self.floating_window.update_heart_rate(bpm)
@@ -876,9 +895,10 @@ class HeartRateMonitor:
             
             # 视觉报警逻辑
             if hasattr(self, 'webhook_manager'):
-                threshold = self.webhook_manager.default_threshold
-                if raw_hr >= threshold:
-                    self.heart_rate_label.config(bg="#440000") # 高心率变暗红背景
+                threshold_low = self.webhook_manager.default_threshold_low
+                threshold_high = self.webhook_manager.default_threshold_high
+                if raw_hr >= threshold_high or raw_hr <= threshold_low:
+                    self.heart_rate_label.config(bg="#440000") # 心率异常变暗红背景
                 else:
                     self.heart_rate_label.config(bg="#1A1A1A")
 
