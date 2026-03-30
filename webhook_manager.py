@@ -13,7 +13,7 @@ from typing import Callable, Optional, List, Dict
 # 定义 Webhook 的独立配置文件
 WEBHOOK_CONFIG_FILE = "config_webhook.json"
 # 定义 GitHub 仓库中的预设文件 URL
-GITHUB_CONFIG_URL = "https://ghproxy.net/https://raw.githubusercontent.com/wang0227-demo/HeartRateMonitor/refs/heads/main/config_webhook.json"
+GITHUB_CONFIG_URL = "https://ghproxy.net/https://raw.githubusercontent.com/wang0227-demo/demo/refs/heads/main/config_webhook.json"
 
 class WebhookManager:
     """
@@ -24,7 +24,7 @@ class WebhookManager:
         self.logger = logger_func
         self.response_logger = response_logger
         self.webhooks: List[Dict] = []
-        
+        self.default_low_battery = 20                   # 默认电量低提醒
         # --- 智能过滤状态控制 ---
         self.last_trigger_times: Dict[str, float] = {}  # 记录每个 Webhook 上次触发的时间
         self.default_threshold_low = 60                   # 默认报警阈值
@@ -36,7 +36,16 @@ class WebhookManager:
         self.worker_thread.start()
         
         self.load_webhooks() # 初始化时即加载
-
+        
+    def log_to_response_window(self, message):
+        """确保日志输出始终在 Tkinter 主线程执行"""
+        def _do_log():
+            self.response_log.config(state="normal")
+            self.response_log.insert(tk.END, f"> {message}\n")
+            self.response_log.see(tk.END)
+            self.response_log.config(state="disabled")
+        
+        self.root.after(0, _do_log) # 跨线程安全调度
     def load_webhooks(self):
         """从 config_webhook.json 加载 Webhook 列表"""
         if not os.path.exists(WEBHOOK_CONFIG_FILE):
@@ -88,18 +97,14 @@ class WebhookManager:
             except Exception as e:
                 self.logger(f"[WebhookWorker] 严重错误: {e}")
 
-    def trigger_event(self, event_type: str, heart_rate: int = 0):
-        """
-        根据事件类型触发匹配的 Webhook。
-        增加了心率阈值过滤和冷却时间检查。
-        """
-        """重写触发逻辑：改为向队列投递任务"""
-        current_time = time.time()
-        
+    def trigger_event(self, event_type: str, heart_rate: int = 0, battery: int = 0, mac: str = ""):
+        """ 统一触发事件入口：支持 connected, disconnected, low_battery， heart_rate_updated """
+        current_time = time.time() 
         event_map = {
             "connected": "设备已连接",
             "disconnected": "设备已断开",
-            "heart_rate_updated": f"心率异常"
+            "low_battery": "设备电量低",
+            "heart_rate_updated": "心率异常"
         }
 
         for index, config in enumerate(self.webhooks):
@@ -112,29 +117,47 @@ class WebhookManager:
 
             # --- 智能过滤逻辑 ---
             if event_type == "heart_rate_updated":
-                # 1. 检查阈值：如果当前心率低于配置的阈值，则跳过
+                # 正常范围内不触发
                 threshold_low = config.get("threshold_low", self.default_threshold_low)
                 threshold_high = config.get("threshold_high", self.default_threshold_high)
+                # 如果心率在正常范围内，不触发
                 if threshold_low < heart_rate < threshold_high:
                     continue
                 
-                # 2. 检查冷却时间：防止频繁发送
+                # 冷却时间检查
                 webhook_id = config.get("name", f"webhook_{index}")
                 last_time = self.last_trigger_times.get(webhook_id, 0)
-                cooldown = config.get("cooldown", self.default_cooldown)
-                
+                cooldown = config.get("cooldown", self.default_cooldown)     
                 if current_time - last_time < cooldown:
                     continue
                 
-                # 符合条件，更新触发时间
+                # 更新触发时间
                 self.last_trigger_times[webhook_id] = current_time
-                self.logger(f"[{config.get('name')}] 当前心率{heart_rate}满足触发条件:（心率 ≥ {threshold_high} or 心率 ≤ {threshold_low}）")
 
-            # --- 准备并发送请求 ---
-            body_str = config.get("body", "{}").replace("{event}", event_map.get(event_type, event_type))
+            # --- 智能过滤逻辑 ---
+            if event_type == "low_battery":
+                if battery > self.default_low_battery:
+                    continue
+
+                # 冷却时间检查
+                webhook_id = config.get("name", f"webhook_{index}")
+                last_time = self.last_trigger_times.get(webhook_id, 0)
+                cooldown = config.get("cooldown", self.default_cooldown)     
+                if current_time - last_time < cooldown:
+                    continue
+                
+                # 更新触发时间
+                self.last_trigger_times[webhook_id] = current_time
+
+            # --- 统一准备并发送任务 (无论什么事件) ---
+            event_desc = event_map.get(event_type, event_type)
+            # 替换 Body 中的 {event} 变量
+            battery_str = str(battery) if battery > 0 else "N/A"
+            body_str = config.get("body", "{}").replace("{event}", event_desc).replace("{mac}", mac).replace("{battery}", battery_str)    
+            # 投递到异步任务队列 (config, heart_rate, is_test, custom_body, retry_count)
             task_data = (config, heart_rate, False, body_str, 0)
             self.task_queue.put(task_data)
-            self.logger(f"[{config.get('name')}] 已加入发送队列")
+            self.logger(f"[{config.get('name')}] {event_desc} 事件已加入发送队列")
 
     def _execute_http_request(self, config: Dict, heart_rate: int, is_test: bool = False, 
                           custom_body: Optional[str] = None, retry_count: int = 0):
@@ -149,7 +172,7 @@ class WebhookManager:
         try:
             bpm_str = str(heart_rate) if heart_rate > 0 else "N/A"
             url = config.get("url", "").replace("{bpm}", bpm_str)
-            
+
             # 校验 URL
             if not url.startswith(('http://', 'https://')):
                 log_msg(f"[{webhook_name}] 发送失败: URL无效")
@@ -171,10 +194,10 @@ class WebhookManager:
             with request.urlopen(req, timeout=8) as response:
                 status = response.status
                 log_msg(f"✅ Webhook [{webhook_name}] 发送成功 ({status})")
-                # 如果是测试模式，打印出飞书的返回内容方便调试
+                # 如果是测试模式，打印出 返回内容方便调试
                 if is_test:
                     resp_data = response.read().decode('utf-8', errors='ignore')
-                    log_msg(f"飞书返回: {resp_data}")
+                    log_msg(f"服务器返回: {resp_data}")
 
         except Exception as e:
             if retry_count < max_retries:
@@ -204,9 +227,9 @@ class WebhookManager:
 
     def test_webhook(self, config: Dict):
         """立即测试单个 Webhook（不进冷却和阈值逻辑）"""
-        # 参数顺序对应：(config, heart_rate, is_test, custom_body, retry_count)
-        test_body = config.get("body", "{}").replace("{event}", "测试事件").replace("{bpm}", "88")
-        task_data = (config, 88, True, test_body, 0)
+        # 参数顺序对应：(config, heart_rate, battery, is_test, custom_body, retry_count)
+        test_body = config.get("body", "{}").replace("{event}", "测试事件").replace("{bpm}", "88").replace("{battery}", "20")
+        task_data = (config, 88, 20, True, test_body, 0)
         self.task_queue.put(task_data)
         self.logger(f"[{config.get('name')}] 测试请求已加入队列")
 

@@ -37,6 +37,19 @@ class BluetoothTool:
         except Exception as e:
             return False, f"扫描失败: {str(e)}"
 
+    async def read_battery_level(self, client: BleakClient, ui_instance):
+        """读取并更新设备电量"""
+        BATTERY_CHAR_UUID = "00002a19-0000-1000-8000-00805f9b34fb"
+        try:
+            # 读取电量字节数据
+            battery_data = await client.read_gatt_char(BATTERY_CHAR_UUID)
+            if battery_data:
+                level = int(battery_data[0])
+                # 安全地回调 UI 线程进行更新
+                ui_instance.root.after(0, lambda: ui_instance.update_battery_ui(level))
+        except Exception as e:
+            self.log_message(f"电量读取失败 (可能设备不支持标准电量服务): {e}")
+
     async def _find_hr_uuid(self, client: BleakClient):
         """
         寻找心率特征 UUID。
@@ -70,33 +83,56 @@ class BluetoothTool:
         max_delay = 30.0
         retry_count = 0
 
+        BATTERY_INTERVAL = 300  # 5分钟 = 300秒
+        last_battery_check = 0   # 初始设为0，连接成功后会立即触发第一次读取
+
         def notification_handler(characteristic: BleakGATTCharacteristic, data: bytearray):
-            try:
-                self.last_rx_time = time.time()  # 更新数据活跃时间戳
-                flags = data[0]
-                raw_hr = data[1] if not (flags & 0x01) else int.from_bytes(data[1:3], byteorder='little')
-                
-                if raw_hr <= 0: return
-                
-                # 更新 UI 及各路服务器数据
-                ui_instance.heart_rate = raw_hr
-                if raw_hr > ui_instance.max_heart_rate:
-                    ui_instance.max_heart_rate = raw_hr
-                
-                ui_instance.heart_rate_queue.put(raw_hr)
-                ui_instance.root.after(0, lambda: ui_instance.on_heart_rate_update(raw_hr))
-                
-                if hasattr(ui_instance, 'websocket_server') and ui_instance.websocket_server:
-                    ui_instance.websocket_server.broadcast_heart_rate(raw_hr, ui_instance.max_heart_rate)
-            except Exception as e:
-                ui_instance.log_message(f"解析异常: {e}")
+
+            self.last_rx_time = time.time()  # 更新数据活跃时间戳
+            flags = data[0]
+            raw_hr = data[1] if not (flags & 0x01) else int.from_bytes(data[1:3], byteorder='little')
+
+            new_state = "high" if raw_hr > 160 else "normal"
+            if getattr(ui_instance, 'last_img_state', "") != new_state:
+                target_url = "E:/Git/HeartRateMonitor/resources/GUI.png" if new_state == "high" else "E:/Git/HeartRateMonitor/resources/OBS.png"
+                ui_instance.update_webhook_image(target_url)
+                ui_instance.last_img_state = new_state
+
+            if raw_hr > 120:
+                alert_url = "https://pixnio.com/free-images/2026/02/14/2026-02-14-08-23-37-768x1122.png"
+                ui_instance.add_to_ad_queue(alert_url)
+
+
+
+            # 物理层过滤：拦截传感器松动产生的噪音 (0, 255 等)
+            if raw_hr <= 30 or raw_hr >= 220:
+                return 
+            # 突发跳变拦截：如果 1 秒内变化超过 50，通常是硬件误差
+            last_hr = getattr(ui_instance, 'heart_rate', 0)
+            if last_hr > 0 and abs(raw_hr - last_hr) > 50:
+                return
+            # 只有通过过滤的数据才去触发 Webhook
+            if hasattr(ui_instance, 'webhook_manager'):
+                ui_instance.webhook_manager.trigger_event("heart_rate_updated", raw_hr)
+            # 更新 UI 及各路服务器数据
+            ui_instance.heart_rate = raw_hr    
+            if raw_hr > ui_instance.max_heart_rate:
+                ui_instance.max_heart_rate = raw_hr
+            ui_instance.heart_rate_queue.put(raw_hr)
+            ui_instance.root.after(0, lambda: ui_instance.on_heart_rate_update(raw_hr))
+            if hasattr(ui_instance, 'websocket_server') and ui_instance.websocket_server:
+                ui_instance.websocket_server.broadcast_heart_rate(raw_hr, ui_instance.max_heart_rate)                    
 
         def disconnected_callback(client):
             ui_instance.connected = False
             ui_instance.log_message(f"⚠️ 设备 {mac} 物理链路断开")
+            # 触发断开 Webhook
+            if hasattr(ui_instance, 'webhook_manager'):
+                ui_instance.webhook_manager.trigger_event("disconnected", 0, 0, mac)
 
         # --- 核心重连监控循环 ---
         while ui_instance.should_connect:
+
             try:
                 # 1. 物理层预热：在连接前尝试通过扫描定位设备
                 ui_instance.log_message(f"正在定位并唤醒驱动: {mac}...")
@@ -107,20 +143,50 @@ class BluetoothTool:
                 async with BleakClient(device, disconnected_callback=disconnected_callback, timeout=15.0) as client:
                     retry_count = 0 
                     ui_instance.connected = True
+                    # 显式触发 UI 连接成功回调
+                    ui_instance.root.after(0, ui_instance._on_connect) 
+
                     self.last_rx_time = time.time() # 初始化时间戳
                     ui_instance.log_message(f"✅ 连接成功: {mac}")
+
+                    # 触发连接成功 Webhook
+                    if hasattr(ui_instance, 'webhook_manager'):
+                        ui_instance.webhook_manager.trigger_event("connected", 0, 0, mac)
 
                     hr_uuid = await self._find_hr_uuid(client)
                     if hr_uuid:
                         await client.start_notify(hr_uuid, notification_handler)
                         ui_instance.log_message("实时心率流已启动")
+
+                        await self.read_battery_level(client, ui_instance)
                         
                         # 2. 逻辑看门狗：监控数据流是否卡死
                         while ui_instance.connected and ui_instance.should_connect:
                             await asyncio.sleep(1.0)
+
+                            current_time = time.time()
+                            if current_time - last_battery_check >= BATTERY_INTERVAL:
+                                try:
+                                    # 尝试读取电量 (UUID: 0x2A19)
+                                    battery_data = await client.read_gatt_char("00002a19-0000-1000-8000-00805f9b34fb")
+                                    if battery_data:
+                                        level = int(battery_data[0]) # 某些设备返回字节数组，取第一个
+                                        # 同步更新 UI
+                                        ui_instance.root.after(0, lambda l=level: ui_instance.update_battery_ui(l))
+                                        last_battery_check = current_time
+
+                                        if hasattr(ui_instance, 'webhook_manager'):
+                                            ui_instance.webhook_manager.trigger_event("low_battery", 0, level, "")
+
+                                except Exception as e: 
+                                    # 部分手环在传输心率时可能拒绝同时读取特征值，这里静默失败即可
+                                    print(f"[BLE] 定时读取电量跳过: {e}")
+                                    # 如果失败，1分钟后再试，而不是等5分钟
+                                    last_battery_check = current_time - 240 
+
                             # 如果超过 15 秒没收到新包，认为驱动层已死，主动退出触发重连
                             if time.time() - self.last_rx_time > 15.0:
-                                ui_instance.log_message("检测到链路活跃异常（数据卡死），尝试强制重启...")
+                                ui_instance.log_message("检测到数据流卡死，准备重连...")
                                 break
                                 
                         if ui_instance.should_connect:

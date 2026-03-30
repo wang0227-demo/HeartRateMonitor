@@ -11,12 +11,20 @@ def main():
     parser.add_argument('--scan', action='store_true', help='仅扫描设备')
     args = parser.parse_args()
     
-    if args.scan:
-        from heart_rate_tool import scan_and_select_device
-        asyncio.run(scan_and_select_device())
-    else:
-        app = HeartRateMonitor()
-        app.run()
+    try:
+        if args.scan:
+            from heart_rate_tool import scan_and_select_device
+            asyncio.run(scan_and_select_device())
+        else:
+            app = HeartRateMonitor()
+            app.run()
+    except KeyboardInterrupt:
+        # 捕获 Ctrl+C，不打印那一大串 Traceback
+        print("\n[INFO] 用户终止程序，正在退出...")
+        sys.exit(0)
+    except Exception as e:
+        print(f"\n[ERROR] 程序发生异常: {e}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     # [最高优先级] 必须在第一行，阻止打包后的子进程无限循环启动

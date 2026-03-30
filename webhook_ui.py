@@ -31,6 +31,7 @@ class WebhookWindow(tk.Toplevel):
         self.url_var = tk.StringVar()
         self.trigger_connect_var = tk.BooleanVar(value=False)
         self.trigger_disconnect_var = tk.BooleanVar(value=False)
+        self.trigger_low_battery_var = tk.BooleanVar(value=False)
         self.trigger_hr_update_var = tk.BooleanVar(value=True)
         self.threshold_low_var = tk.StringVar(value="60")
         self.threshold_high_var = tk.StringVar(value="120")
@@ -85,10 +86,11 @@ class WebhookWindow(tk.Toplevel):
         trig_frame.grid(row=3, column=0, columnspan=2, sticky="ew", pady=10)
         ttk.Checkbutton(trig_frame, text="设备连接时", variable=self.trigger_connect_var).pack(side=tk.LEFT, padx=10)
         ttk.Checkbutton(trig_frame, text="设备断开时", variable=self.trigger_disconnect_var).pack(side=tk.LEFT, padx=10)
-        ttk.Checkbutton(trig_frame, text="心率刷新时", variable=self.trigger_hr_update_var).pack(side=tk.LEFT, padx=10)
+        ttk.Checkbutton(trig_frame, text="设备电量低", variable=self.trigger_low_battery_var).pack(side=tk.LEFT, padx=10)
+        ttk.Checkbutton(trig_frame, text="心率异常时", variable=self.trigger_hr_update_var).pack(side=tk.LEFT, padx=10)
 
         # 智能过滤设置
-        filter_frame = ttk.LabelFrame(details_frame, text="心率报警过滤 (仅限心率刷新触发)", padding=10)
+        filter_frame = ttk.LabelFrame(details_frame, text="心率报警过滤 (仅限心率异常触发)", padding=10)
         filter_frame.grid(row=4, column=0, columnspan=2, sticky="ew", pady=5)
         ttk.Label(filter_frame, text="报警阈值Low ≤").pack(side=tk.LEFT)
         ttk.Entry(filter_frame, textvariable=self.threshold_low_var, width=8).pack(side=tk.LEFT, padx=5)
@@ -144,6 +146,7 @@ class WebhookWindow(tk.Toplevel):
         trigs = config.get("triggers", ["heart_rate_updated"])
         self.trigger_connect_var.set("connected" in trigs)
         self.trigger_disconnect_var.set("disconnected" in trigs)
+        self.trigger_low_battery_var.set("low_battery" in trigs)
         self.trigger_hr_update_var.set("heart_rate_updated" in trigs)
         
         # 过滤参数回填
@@ -163,6 +166,7 @@ class WebhookWindow(tk.Toplevel):
         trigs = []
         if self.trigger_connect_var.get(): trigs.append("connected")
         if self.trigger_disconnect_var.get(): trigs.append("disconnected")
+        if self.trigger_low_battery_var.get(): trigs.append("low_battery")
         if self.trigger_hr_update_var.get(): trigs.append("heart_rate_updated")
 
         body_raw = self.body_text.get("1.0", tk.END).strip()
@@ -211,9 +215,10 @@ class WebhookWindow(tk.Toplevel):
         # 重置 UI 变量为默认值
         self.enabled_var.set(True)
         self.name_var.set("新 Webhook")
-        self.url_var.set("http://")
+        self.url_var.set("http://127.0.0.1")
         self.trigger_connect_var.set(False)
         self.trigger_disconnect_var.set(False)
+        self.trigger_low_battery_var.set(False)
         self.trigger_hr_update_var.set(True)
         self.threshold_low_var.set("60")
         self.threshold_high_var.set("120")

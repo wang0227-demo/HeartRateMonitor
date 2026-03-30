@@ -18,7 +18,7 @@ from api_server import ApiServer
 from websocket_server import WebSocketServer # [新增] 导入WebSocket服务器
 from webhook_manager import WebhookManager
 from webhook_ui import WebhookWindow
-from utils import ICON_PATH, CURRENT_VERSION
+from utils import ICON_PATH, CURRENT_VERSION, get_resource_path
 
 # ==========================================
 # 高性能平滑波形组件 (Low CPU Usage 版)
@@ -42,7 +42,7 @@ class RealTimeWaveform:
         
         self.canvas = tk.Canvas(
             parent_frame, bg=self.bg_color, 
-            highlightthickness=0, height=120, bd=0
+            highlightthickness=0, height=111, bd=0
         )
         self.canvas.pack(fill="x", expand=True, pady=(1, 0))
         self.canvas.bind("<Configure>", lambda e: self.draw())
@@ -120,12 +120,13 @@ class HeartRateMonitor:
     def __init__(self):
         self.heart_rate = 0
         self.max_heart_rate = 0
+        self.battery_level = 0  #  记录当前电量
         self.waveform = None
         self.connected = False
         self.current_mac = ""
+        self.current_mac_name = ""
         self.should_connect = False  # 控制自动重连循环
-        self.ble_task = None
-        self.ble_loop = None  # 专用的异步循环
+
         self.ble_thread = None  # 运行异步循环的线程
         self.should_stop = False
         # [新增] 波形组件引用
@@ -152,6 +153,13 @@ class HeartRateMonitor:
         self.update_heart_rate_display()       
         self.load_settings()
 
+        default_webhook_image = get_resource_path("resources/GUI.png")
+        self.update_webhook_image(default_webhook_image)    
+        self.ad_image_queue = []  # 存储图片路径或 URL
+        self.current_ad_index = 0
+        self.ad_rotation_speed = 5000  # 轮换速度，单位毫秒 (5秒)
+        self.is_rotating = False  # 轮换状态开关
+
         #self._trigger_feishu_stats()
 
     def _trigger_feishu_stats(self):
@@ -167,6 +175,25 @@ class HeartRateMonitor:
         # 开启线程异步运行，绝对不卡界面
         import threading
         threading.Thread(target=task, daemon=True).start()
+
+    def update_battery_ui(self, level):
+        """供蓝牙后台线程调用，更新电量状态"""
+        self.battery_level = level # 更新缓存值
+        self.battery_bar['value'] = level
+        self.battery_percent_label.config(text=f"{level}%")
+        # 电量变化时立即同步给 WebSocket
+        if self.websocket_server:
+            self.websocket_server.broadcast_heart_rate(self.heart_rate, self.max_heart_rate, level)        
+        # 根据电量改变颜色提醒 (利用 tkinter 默认主题的颜色或自定义)
+        if level <= 20:
+            self.battery_percent_label.config(foreground="red")
+            self.log_message(f"⚠️ 设备电量低: {level}%")
+        elif level <= 50:
+            self.battery_percent_label.config(foreground="#D48806") # 橙黄色
+        else:
+            self.battery_percent_label.config(foreground="#228B22") # 森林绿
+
+
 
     def apply_global_icon(self, window):
         """为传入的窗口应用全局图标"""
@@ -186,7 +213,7 @@ class HeartRateMonitor:
         
         # 1. 更新主界面数值显示
         if hasattr(self, 'max_hr_display'):
-            self.max_hr_display.config(text="MAX: 0")
+            self.max_hr_display.config(text="PEAK: 0")
         
         # 2. 立即通知 WebSocket 服务器 (同步给 OBS 网页端)
         if self.websocket_server:
@@ -195,13 +222,70 @@ class HeartRateMonitor:
         # 3. 记录日志
         self.log_message("最高心率已重置")
 
+    def start_ad_rotation(self):
+        """启动或继续轮播"""
+        if not self.ad_image_queue:
+            return
+        
+        # 获取当前图片并显示
+        img_url = self.ad_image_queue[self.current_ad_index]
+        self.update_webhook_image(img_url)
+        
+        # 计算下一个索引
+        self.current_ad_index = (self.current_ad_index + 1) % len(self.ad_image_queue)
+        
+        # 注册下一次切换任务 (Tkinter 原生定时器)
+        self.root.after(self.ad_rotation_speed, self.start_ad_rotation)
+        self.is_rotating = True
+
+    def add_to_ad_queue(self, new_img_url):
+        """Webhook 触发时将新图片加入轮播池"""
+        if new_img_url not in self.ad_image_queue:
+            self.ad_image_queue.append(new_img_url)
+            # 如果当前没在轮播，立刻启动
+            if not self.is_rotating:
+                self.start_ad_rotation()
+    def update_webhook_image(self, img_url_or_path):
+        from PIL import Image, ImageTk
+        import requests
+        from io import BytesIO
+        import os
+
+        def _load_task():
+            try:
+                # 1. 获取图片源
+                if isinstance(img_url_or_path, str) and img_url_or_path.startswith('http'):
+                    resp = requests.get(img_url_or_path, timeout=5, headers={'User-Agent': 'Mozilla/5.0'})
+                    if 'image' not in resp.headers.get('Content-Type', '').lower():
+                        return
+                    img = Image.open(BytesIO(resp.content))
+                elif os.path.exists(img_url_or_path):
+                    img = Image.open(img_url_or_path)
+                else: return
+
+                # 2. 缩放逻辑：在 280x134 内等比例缩放 (LANCZOS 保证清晰度)
+                img.thumbnail((280, 134), Image.Resampling.LANCZOS)
+                photo = ImageTk.PhotoImage(img)
+
+                # 3. 回到主线程更新
+                def _apply():
+                    self.webhook_img_label.config(image=photo, text="")
+                    self.webhook_img_label.image = photo 
+                self.root.after(0, _apply)
+                
+            except Exception as e:
+                self.log_message(f"图片展示失败: {e}")
+
+        threading.Thread(target=_load_task, daemon=True).start()
+
+
 
     def setup_ui(self):
         self.root = tk.Tk()
         self.root.title(f"心率监控器 - {CURRENT_VERSION}")
         self.root.geometry("880x600") 
         self.root.minsize(800, 515)
-        self.root.resizable(True, True)
+        self.root.resizable(False, True)
         self.root.configure(bg="#F0F0F0")
         
         try:
@@ -280,16 +364,40 @@ class HeartRateMonitor:
         )
         self.reset_max_btn.pack(side=tk.RIGHT)
 
-        self.max_hr_display = tk.Label(info_footer, text="MAX: 0", font=("Consolas", 9, "bold"), fg="#AAAAAA", bg="#1A1A1A")
+        self.max_hr_display = tk.Label(info_footer, text="PEAK: 0", font=("Consolas", 9, "bold"), fg="#AAAAAA", bg="#1A1A1A")
         self.max_hr_display.pack(side=tk.RIGHT, padx=10)
         
+        # 创建父容器 (LabelFrame)
         device_frame = ttk.LabelFrame(left_column_frame, text="设备信息", padding="10")
         device_frame.pack(fill="x", pady=PAD_Y)
         device_frame.columnconfigure(1, weight=1)
+
+        # 设备名行 (row 0)
         ttk.Label(device_frame, text="当前设备:").grid(row=0, column=0, sticky=tk.W)
+
         self.device_label = ttk.Label(device_frame, text="未选择设备")
         self.device_label.grid(row=0, column=1, sticky="ew", padx=(10, 0))
-        
+
+        # 自定义横线 (row 1)
+        # 想要更粗就把 height 改为 2
+        tk.Frame(device_frame, bg="#CCCCCC", height=1).grid(
+            row=1, column=0, columnspan=2, sticky="ew", padx=2, pady=16
+        )
+        # 添加分割线 (放在 row 1)
+        # ttk.Separator(device_frame, orient='horizontal').grid(row=1, column=0, columnspan=2, sticky="ew", pady=10)
+
+        # 电量行 (row 2)
+        self.status_info_frame = tk.Frame(device_frame)
+        self.status_info_frame.grid(row=2, column=0, columnspan=2, sticky="ew")
+        self.status_info_frame.columnconfigure(1, weight=1)
+
+        # 电量内部组件...
+        ttk.Label(self.status_info_frame, text="🔋 电量:").grid(row=0, column=0, sticky="w")
+        self.battery_bar = ttk.Progressbar(self.status_info_frame, mode='determinate')
+        self.battery_bar.grid(row=0, column=1, sticky="ew", padx=10)
+        self.battery_percent_label = ttk.Label(self.status_info_frame, text="--%", font=("Consolas", 9))
+        self.battery_percent_label.grid(row=0, column=2, sticky="e")
+
         button_frame = ttk.LabelFrame(left_column_frame, text="连接控制", padding="10")
         button_frame.pack(fill="x", pady=PAD_Y)
         button_frame.columnconfigure((0, 1, 2), weight=1)
@@ -299,6 +407,8 @@ class HeartRateMonitor:
         self.connect_button.grid(row=0, column=1, padx=5, sticky="ew")
         self.disconnect_button = ttk.Button(button_frame, text="断开", command=self.disconnect_device, state=tk.DISABLED)
         self.disconnect_button.grid(row=0, column=2, padx=(5, 0), sticky="ew")
+
+
         
         vrc_frame = ttk.LabelFrame(middle_column_frame, text="VRChat OSC 同步", padding="10")
         vrc_frame.pack(fill="x", pady=PAD_Y)
@@ -336,7 +446,8 @@ class HeartRateMonitor:
         webhook_frame = ttk.LabelFrame(middle_column_frame, text="Webhook 数据推送", padding="10")
         webhook_frame.pack(fill="x", pady=PAD_Y)
         ttk.Button(webhook_frame, text="打开 Webhook 设置...", command=self.open_webhook_window).pack(fill="x")
-        
+
+
         floating_frame = ttk.LabelFrame(right_column_frame, text="悬浮窗控制", padding="10")
         floating_frame.pack(fill="x", pady=PAD_Y)
         floating_frame.columnconfigure((0, 1, 2), weight=1)
@@ -360,7 +471,7 @@ class HeartRateMonitor:
         ttk.Button(color_frame, text="选择...", command=self.choose_locked_color).grid(row=1, column=2, padx=5, pady=(5, 0), sticky=tk.E)
 
         format_frame = ttk.LabelFrame(right_column_frame, text="悬浮窗格式设置", padding="10")
-        format_frame.pack(fill="x", pady=PAD_Y)
+        format_frame.pack(fill="x", pady=0)
         format_frame.columnconfigure(1, weight=1)
         ttk.Label(format_frame, text="格式:").grid(row=0, column=0, sticky=tk.W, padx=(0,5))
         ttk.Entry(format_frame, textvariable=self.format_var).grid(row=0, column=1, sticky="ew")
@@ -374,6 +485,16 @@ class HeartRateMonitor:
         ttk.Button(btn_subframe, text="选择图片...", command=self.choose_image).grid(row=0, column=0, sticky='ew', padx=(0,5))
         ttk.Button(btn_subframe, text="清除图片", command=self.clear_image).grid(row=0, column=1, sticky='ew', padx=5)
         ttk.Button(btn_subframe, text="应用格式", command=self.apply_format).grid(row=0, column=2, sticky='ew', padx=(5,0))
+
+
+        # 确保使用固定底座
+        self.ad_box = tk.Frame(right_column_frame, width=280, height=134, bg="#1a1a1a")
+        self.ad_box.pack_propagate(False) # 锁定大小
+        self.ad_box.pack(pady=10, fill="x")
+
+        self.webhook_img_label = tk.Label(self.ad_box, bg="#1a1a1a")
+        self.webhook_img_label.pack(fill="both", expand=True)
+
 
         # 日志区
         log_frame = ttk.LabelFrame(main_frame, text="系统日志")
@@ -473,15 +594,12 @@ class HeartRateMonitor:
                     
                     # 更新主界面标签
                     self.heart_rate_label.config(text=f"心率 : {bpm}")
-                    self.max_hr_display.config(text=f"MAX: {self.max_heart_rate}")
+                    self.max_hr_display.config(text=f"PEAK: {self.max_heart_rate}")
 
                     # [核心新增] 更新波形图数据
                     if self.waveform:
                         self.waveform.push_data(bpm)
 
-                    # 添加 Webhook 触发 
-                    if hasattr(self, 'webhook_manager'):
-                        self.webhook_manager.trigger_event("heart_rate_updated", bpm)
                     # 更新悬浮窗
                     if self.floating_window and self.floating_window.is_open():
                         self.floating_window.update_heart_rate(bpm)
@@ -492,7 +610,8 @@ class HeartRateMonitor:
                         
                     # [新增] 如果启用了 WebSocket，推送数据
                     if self.websocket_server:
-                        self.websocket_server.broadcast_heart_rate(bpm, self.max_heart_rate)
+                        # 传入 self.battery_level 确保数据同步
+                        self.websocket_server.broadcast_heart_rate(bpm, self.max_heart_rate, self.battery_level)
                         
         except queue.Empty:
             pass
@@ -589,14 +708,14 @@ class HeartRateMonitor:
             self.api_status_label.config(text="状态: 已禁用", foreground="gray")
 
     def save_settings(self):
-        self.webhook_manager.save_webhooks() 
         
         geometry = self.floating_window.last_geometry
         if self.floating_window.is_open() and self.floating_window.window is not None:
             geometry = self.floating_window.window.geometry()
             
         config = {
-            "mac": self.current_mac,
+            "mac": self.current_mac,# [核心] 保存当前正在使用的 MAC
+            "mac_name": self.current_mac_name,# [核心] 保存当前正在使用的设备名
             "window": {
                 "visible": self.floating_window.is_open(),
                 "locked": self.floating_window.is_locked(),
@@ -628,13 +747,15 @@ class HeartRateMonitor:
         if not config:
             self.log_message("未找到配置文件，使用默认设置。")
             return
-
+        # 加载 MAC 地址
         mac = config.get("mac")
         if mac:
             self.current_mac = mac
             self.device_label.config(text=f"MAC: {mac}")
             self.connect_button.config(state=tk.NORMAL)
             self.log_message(f"从配置文件加载设备: {mac}")
+            # 自动连接逻辑：延迟 500ms 触发，确保 UI 渲染完毕
+            self.root.after(500, self.connect_device)
 
         window_settings = config.get("window")
         if window_settings:
@@ -739,33 +860,25 @@ class HeartRateMonitor:
         self.show_floating_button.config(text="显示悬浮窗")
         self.lock_button.config(text="锁定悬浮窗", state=tk.DISABLED)
         self.log_message("悬浮窗已关闭")
-
     def on_closing(self):
-        """[优化] 退出程序时的清理逻辑"""
-        self.should_connect = False
-        self.save_settings()
+        """最稳妥的退出方案"""
+        self.should_connect = False  # 停止蓝牙重连
+        self.connected = False       # 停止数据更新
         
-        # 优雅停止异步循环
-        if self.ble_loop:
-            self.ble_loop.call_soon_threadsafe(self.ble_loop.stop)
-        if self.api_server: 
-            self.api_server.stop()
-            
-        if self.websocket_server: 
-            self.websocket_server.stop()
-        self.log_message("正在释放网络资源...")                
-        # 给 200ms 时间让线程退出
-        self.root.after(200, self._final_destroy)
-
-    def _final_destroy(self):
-        """最终销毁步骤"""
+        # 尝试保存配置
         try:
-            self.root.destroy()
+            self.save_settings()
         except:
             pass
-        # os._exit(0) 比 sys.exit(0) 更暴力，能确保所有守护线程彻底消失
+
+        # 停止所有服务器
+        if self.api_server: self.api_server.stop()
+        if self.websocket_server: self.websocket_server.stop()
+
+        # 直接强制退出进程，不给 asyncio 报错的机会
+        # 因为你的蓝牙线程是 daemon=True，这样退出是最干净的
         import os
-        os._exit(0)
+        os._exit(0)     
         
     def scan_devices(self):
         """[重构后] 点击扫描按钮触发"""
@@ -830,6 +943,7 @@ class HeartRateMonitor:
                 selected_device = devices[selection[0]]
                 # 保存 MAC 地址供连接使用
                 self.current_mac = selected_device.address
+                self.current_mac_name = selected_device.name
                 # 更新 UI 状态
                 self.device_label.config(text=f"已选: {selected_device.name or '未知'}", foreground="#0078d7")
                 self.connect_button.config(state=tk.NORMAL)
@@ -863,27 +977,27 @@ class HeartRateMonitor:
         loop.run_forever()
 
     def connect_device(self):
-        
         if not self.current_mac:
-            messagebox.showwarning("连接失败", "请先选择设备")
+            messagebox.showwarning("警告", "请先选择设备")
             return
-        if self.connected:
-            messagebox.showinfo("连接状态", "设备已连接")
-            return
+        
+        self.should_connect = True
+        self.connect_button.config(state=tk.DISABLED)
+        self.disconnect_button.config(state=tk.NORMAL)
 
-        self.should_connect = True  # 允许开始重连循环
-        self._ensure_ble_loop_running()
-        # 禁用按钮防止重复点击
-        self.connect_button.config(state="disabled")
-        self.scan_button.config(state="disabled")
-        self.disconnect_button.config(state="normal")
-        # 将连接任务安全地推送到异步线程
-        # 注意：这里不再使用 AsyncTaskManager 包装连接过程，
-        # 因为连接现在是一个“长期运行且会自动重连”的任务。
-        asyncio.run_coroutine_threadsafe(
-            self.ble_tool.get_heart_rate(self.current_mac, self), 
-            self.ble_loop
-        )
+        def run_ble_task():
+            # asyncio.run 是 3.7+ 的标准做法，它会自动创建、运行和彻底关闭 loop
+            try:
+                asyncio.run(self.ble_tool.get_heart_rate(self.current_mac, self))
+            except Exception as e:
+                # 这里捕获到的通常是任务结束时的正常退出
+                self.log_message(f"蓝牙后台任务结束: {e}")
+            finally:
+                # 确保 UI 状态在线程结束时回滚
+                self.root.after(0, self._on_disconnect_ui_update)
+
+        # 依然使用 daemon 线程，确保程序关闭时线程强行终止不卡死
+        threading.Thread(target=run_ble_task, daemon=True).start()
 
     def on_heart_rate_update(self, raw_hr):
         """[优化] 处理来自蓝牙线程的 UI 更新请求"""
@@ -891,7 +1005,7 @@ class HeartRateMonitor:
         if self.should_connect:
             self.heart_rate_label.config(text=f"心率 : {raw_hr}", fg="#00FF88")
             self.status_label.config(text="● 已连接", fg="#00FF88")
-            self.max_hr_display.config(text=f"MAX: {self.max_heart_rate}")
+            self.max_hr_display.config(text=f"PEAK: {self.max_heart_rate}")
             
             # 视觉报警逻辑
             if hasattr(self, 'webhook_manager'):
@@ -943,9 +1057,6 @@ class HeartRateMonitor:
             self.connect_button.config(state=tk.DISABLED)
             self.scan_button.config(state=tk.DISABLED)
             self.disconnect_button.config(state=tk.NORMAL)
-            # 触发 Webhook
-            if hasattr(self, 'webhook_manager'):
-                self.webhook_manager.trigger_event("connected")
         else:
             self.log_message(f"❌ {message}")
             messagebox.showerror("连接失败", message)
@@ -1035,42 +1146,39 @@ class HeartRateMonitor:
             for char in service.characteristics:
                 if any(k in char.description.lower() for k in ['heart rate', 'hr']): return char.uuid
         return None
-
     def _on_connect(self):
+        """设备连接成功后的 UI 响应"""
         self.connected = True
-        self.status_label.config(text="状态: 已连接", fg="green")
-        self.log_message("设备连接成功，开始监控心率")
-        self.webhook_manager.trigger_event("connected", self.heart_rate)
-        # [新增] 连接时广播状态
-        if self.websocket_server:
-            self.websocket_server.broadcast_heart_rate(self.heart_rate, self.max_heart_rate)
-    def disconnect_device(self):
-        """[重构] 主动断开连接"""
-        self.log_message("正在请求断开连接...")
-        self.should_connect = False  # 告诉重连循环：不要再试了
-        
-        # 即使物理链路还没断，UI 先给反馈
-        self.connected = False
-        self._on_disconnect()
-        # 触发 Webhook
-        if hasattr(self, 'webhook_manager'):
-            self.webhook_manager.trigger_event("disconnected")       
+        self.status_label.config(text=" ● 已连接 ", fg="#00FF88") # 状态灯变绿
+        self.connect_button.config(state=tk.DISABLED)
+        self.disconnect_button.config(state=tk.NORMAL)
+        self.scan_button.config(state=tk.DISABLED) # 连接中禁止重新扫描
+        self.log_message(f"✅ 状态同步：设备 {self.current_mac} 已就绪")
 
     def _on_disconnect(self):
-        """统一恢复 UI 状态"""
+        """设备断开连接后的 UI 响应"""
+        self.connected = False
         self.heart_rate = 0
-        self.heart_rate_label.config(text="--", fg="#FF3B30", bg="#1A1A1A")
-        self.status_label.config(text=" ● 未 连 接 ", fg="gray")
-        self.device_label.config(text=f"MAC: {self.current_mac}" if self.current_mac else "未选择设备")
-        
-        self.connect_button.config(state="normal" if self.current_mac else "disabled")
-        self.scan_button.config(state="normal")
-        self.disconnect_button.config(state="disabled")
+        self.heart_rate_label.config(text="--")
+        self.status_label.config(text=" ● 未连接 ", fg="gray")
+        # 断开时重置电量 UI ---
+        self.battery_level = 0
+        self.battery_bar['value'] = 0
+        self.battery_percent_label.config(text="--%", foreground="gray")
 
-        # 广播给 WebSocket (告诉 OBS 网页心率归零)
-        if hasattr(self, 'websocket_server') and self.websocket_server:
-            self.websocket_server.broadcast_heart_rate(0, self.max_heart_rate)
+        self.connect_button.config(state=tk.NORMAL)
+        self.disconnect_button.config(state=tk.DISABLED)
+        self.scan_button.config(state=tk.NORMAL)
+        self.log_message("❌ 状态同步：连接已断开")
 
+    def disconnect_device(self):
+        """只改标志位，不碰 loop"""
+        self.should_connect = False
+        self.connected = False
+        self.log_message("正在断开并停止重连...")    
+    def _on_disconnect_ui_update(self):
+        self.connect_button.config(state=tk.NORMAL)
+        self.disconnect_button.config(state=tk.DISABLED)
     def run(self):
         self.log_message("心率监控器启动")
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)

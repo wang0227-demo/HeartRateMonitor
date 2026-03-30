@@ -92,7 +92,7 @@ class WebSocketServer:
 
 
 
-    def broadcast_heart_rate(self, bpm, max_bpm):
+    def broadcast_heart_rate(self, bpm, max_bpm, battery=0):
         """主线程调用：将心跳数据广播给所有客户端"""
         if not self.loop or not self.loop.is_running() or not self.connected_clients:
             return
@@ -100,6 +100,7 @@ class WebSocketServer:
         data = json.dumps({
             "heart_rate": bpm, 
             "max_heart_rate": max_bpm,
+            "battery": battery, 
             "connected": self.monitor_instance.connected
         })
 
