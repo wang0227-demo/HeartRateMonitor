@@ -5,7 +5,7 @@
 支持悬浮窗显示，适用于全屏游戏、直播等多种场景。支持时实时显示心率 PEAK 以及提供丝滑的实时波形展示，
 并支持多种第三方联动（VRChat OSC、WebSocket、Webhooks）。
 
-<img src="https://github.com/wang0227-demo/HeartRateMonitor/blob/master/resources/GUI.png" width="450"/>
+<img src="https://github.com/wang0227-demo/HeartRateMonitor/blob/master/resources/GUI.png"/>
 
 ## 🌟 核心功能
 
@@ -52,8 +52,9 @@
 在 OBS 中添加一个“浏览器源”，URL 指向你的本地 OBS 页面模板即可（内置3种不同动态显示效果）。
 若心率重置，WebSocket 会同步发送 max_heart_rate: 0 。
 
-<img src="https://github.com/wang0227-demo/HeartRateMonitor/blob/master/resources/OBS.png" width="450"/>
-
+<img src="https://github.com/wang0227-demo/HeartRateMonitor/blob/master/resources/111.png"/>
+<img src="https://github.com/wang0227-demo/HeartRateMonitor/blob/master/resources/222.png"/>
+<img src="https://github.com/wang0227-demo/HeartRateMonitor/blob/master/resources/333.png"/>
 三、Webhook 报警设置
 点击“打开 Webhook 设置” 。
 同步预设：点击“同步官方预设”可以从 GitHub 获取飞书、钉钉等常用配置。

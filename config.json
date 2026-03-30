@@ -1,6 +1,6 @@
 {
     "mac": "F8:3D:7E:0B:BC:7D",
-    "mac_name": "HUAWEI Band HR-C7D",
+    "mac_name": "",
     "window": {
         "visible": false,
         "locked": false,
@@ -19,7 +19,7 @@
         "port": "8000"
     },
     "websocket_server": {
-        "enabled": false,
+        "enabled": true,
         "port": "8001"
     }
 }

@@ -153,7 +153,7 @@ class HeartRateMonitor:
         self.update_heart_rate_display()       
         self.load_settings()
 
-        default_webhook_image = get_resource_path("resources/GUI.png")
+        default_webhook_image = get_resource_path("resources/111.png")
         self.update_webhook_image(default_webhook_image)    
         self.ad_image_queue = []  # 存储图片路径或 URL
         self.current_ad_index = 0

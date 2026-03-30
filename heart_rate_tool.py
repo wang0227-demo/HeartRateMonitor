@@ -94,7 +94,7 @@ class BluetoothTool:
 
             new_state = "high" if raw_hr > 160 else "normal"
             if getattr(ui_instance, 'last_img_state', "") != new_state:
-                target_url = "E:/Git/HeartRateMonitor/resources/GUI.png" if new_state == "high" else "E:/Git/HeartRateMonitor/resources/OBS.png"
+                target_url = "E:/Git/HeartRateMonitor/resources/333.png" if new_state == "high" else "E:/Git/HeartRateMonitor/resources/222.png"
                 ui_instance.update_webhook_image(target_url)
                 ui_instance.last_img_state = new_state
 
@@ -139,7 +139,7 @@ class BluetoothTool:
                 device = await BleakScanner.find_device_by_address(mac, timeout=7.0)
                 if not device:
                     raise BleakDeviceNotFoundError(mac, "扫描无法识别该设备")
-
+                await asyncio.sleep(1.0)  # 给 WinRT 驱动 1 秒钟缓冲
                 async with BleakClient(device, disconnected_callback=disconnected_callback, timeout=15.0) as client:
                     retry_count = 0 
                     ui_instance.connected = True
@@ -195,13 +195,14 @@ class BluetoothTool:
                         ui_instance.log_message("❌ 错误: 该设备不符合标准心率特征")
                         ui_instance.should_connect = False
 
-            except (BleakDeviceNotFoundError, asyncio.TimeoutError, BleakError) as e:
+            except (BleakDeviceNotFoundError, asyncio.TimeoutError, BleakError, asyncio.CancelledError) as e:
                 if not ui_instance.should_connect: break
-                
+                # 如果是 CancelledError，通常意味着 WinRT 拒绝了这次请求
+                error_name = "WinRT取消请求" if isinstance(e, asyncio.CancelledError) else type(e).__name__
                 # 3. 动态退避策略
                 retry_count += 1
                 wait_time = min(base_delay * (1.3 ** retry_count), max_delay)
-                ui_instance.log_message(f"连接失败 ({type(e).__name__})，将在 {wait_time:.1f}s 后进行第 {retry_count} 次重试...")
+                ui_instance.log_message(f"连接中断 ({error_name})，将在 {wait_time:.1f}s 后进行第 {retry_count} 次重试...")
                 await asyncio.sleep(wait_time)
             except Exception as e:
                 ui_instance.log_message(f"系统级异常: {e}")
