@@ -7,7 +7,7 @@
 
 <img src="https://github.com/wang0227-demo/HeartRateMonitor/blob/master/resources/GUI.png"/>
 最新版本下载地址：<a href="https://github.com/wang0227-demo/HeartRateMonitor/releases/download/v1.2.0/HeartRateMonitor-1.2.0.exe">HeartRateMonitor v1.2.0</a>
-
+所需素材模板在文件夹 resources 请自行下载
 ## 🌟 核心功能
 
 - **高性能波形图**：采用区间锁定（0-50, 50-100, 100-150, 150-200）和滞后缓冲区逻辑，提供低 CPU 占用的丝滑视觉体验。
