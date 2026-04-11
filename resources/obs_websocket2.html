@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Heart Rate Monitor Overlay</title>
+    <style>
+        /* 基础样式：透明背景 */
+        body { background: transparent; overflow: hidden; margin: 0; padding: 20px; }
+        
+        .container { 
+            display: flex; align-items: center;
+            font-family: 'Arial Black', sans-serif; 
+            transition: all 0.3s ease;
+            background: rgba(0, 0, 0, 0.2); 
+            padding: 15px 25px;
+            border-radius: 15px;
+            width: fit-content;
+        }
+
+        .heart { 
+            margin-right: 25px;
+            font-size: 50px; 
+            display: inline-block;
+            filter: drop-shadow(0 0 5px rgba(255,0,0,0.3));
+            will-change: transform;
+        }
+
+        #bpm { font-size: 72px; min-width: 90px; text-align: center; }
+        
+        .max-info { 
+            display: flex; flex-direction: column; 
+            align-items: center; justify-content: center;
+            margin-left: 25px; line-height: 1.0;       
+        }
+
+        .max-label {
+            font-size: 14px; color: rgba(255, 255, 255, 0.4); 
+            text-transform: uppercase; font-family: 'Arial', sans-serif;
+            font-weight: bold; margin-bottom: 4px;
+        }
+
+        #maxBpm { font-size: 32px; color: rgba(255, 255, 255, 0.8); }
+
+        .trend-container {
+            margin-left: 30px;
+            padding: 5px;
+            border-left: 1px solid rgba(255,255,255,0.1);
+            background: 
+                linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+            background-size: 15px 15px;
+        }
+
+        @keyframes beat {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.3); }
+            100% { transform: scale(1); }
+        }
+
+        @keyframes shake {
+            0% { transform: translate(2px, 2px); }
+            50% { transform: translate(-2px, -2px); }
+            100% { transform: translate(2px, -2px); }
+        }
+
+        /* 状态颜色 */
+        .status-normal { color: #00ff88; text-shadow: 0 0 15px rgba(0, 255, 136, 0.5); }
+        .status-normal .heart { animation: beat 0.8s infinite cubic-bezier(0.2, 0.8, 0.2, 1); }
+
+        .status-warning { color: #ffaa00; text-shadow: 0 0 20px rgba(255, 170, 0, 0.6); }
+        .status-warning .heart { animation: beat 0.5s infinite; }
+
+        .status-danger { 
+            color: #ff0000; 
+            text-shadow: 0 0 25px #ff0000;
+            animation: flash 0.4s infinite; 
+        }
+        .status-danger .heart { animation: beat 0.3s infinite; }
+        .status-danger #bpm { animation: shake 0.1s infinite; }
+
+        @keyframes flash { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+
+        .disconnected { color: #555 !important; text-shadow: none !important; opacity: 0.6; }
+        .disconnected .heart { animation: none !important; filter: grayscale(1); }
+        .disconnected canvas { opacity: 0.1; }
+    </style>
+</head>
+<body>
+    <div id="wrapper" class="container disconnected">
+        <span id="heartIcon" class="heart">❤️</span>
+        <span id="bpm">--</span>
+        <div class="max-info">
+            <span class="max-label">Peak</span>
+            <span id="maxBpm">--</span>
+        </div>
+        <div class="trend-container">
+            <canvas id="heartRateChart" width="220" height="70"></canvas>
+        </div>
+    </div>
+
+    <script>
+        let socket;
+        let lastMessageTime = Date.now();
+        let rawHistory = [];
+        let smoothHistory = [];
+        const windowSize = 4;
+        const maxHistory = 120;
+
+        const bpmEl = document.getElementById('bpm');
+        const maxEl = document.getElementById('maxBpm');
+        const wrapper = document.getElementById('wrapper');
+        const canvas = document.getElementById('heartRateChart');
+        const ctx = canvas.getContext('2d', { alpha: true });
+
+        // --- 核心优化：颜色映射表 ---
+        const THEME_COLORS = {
+            'status-normal': '#00ff88',
+            'status-warning': '#ffaa00',
+            'status-danger': '#ff0000',
+            'disconnected': '#555555'
+        };
+        
+        let cachedColor = THEME_COLORS['disconnected'];
+        let currentStatus = 'disconnected';
+
+        function connect() {
+            if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+            
+            socket = new WebSocket('ws://127.0.0.1:8001');
+
+            socket.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    lastMessageTime = Date.now();
+
+                    if (!data.connected || data.heart_rate <= 0) {
+                        setDisconnected("OFF");
+                        return;
+                    }
+
+                    const hr = data.heart_rate;
+                    bpmEl.innerText = hr;
+                    maxEl.innerText = data.max_heart_rate || '--';
+
+                    // 判定新状态
+                    let newStatus = 'status-normal';
+                    if (hr >= 120) newStatus = 'status-danger';
+                    else if (hr >= 90) newStatus = 'status-warning';
+
+                    // 只有在状态变更时才操作 DOM
+                    if (currentStatus !== newStatus) {
+                        wrapper.classList.remove('disconnected', 'status-normal', 'status-warning', 'status-danger');
+                        wrapper.classList.add(newStatus);
+                        currentStatus = newStatus;
+                        // 同步更新曲线颜色变量，消除延迟
+                        cachedColor = THEME_COLORS[newStatus];
+                    }
+
+                    updateChart(hr);
+
+                } catch (e) { console.error("Data error:", e); }
+            };
+
+            socket.onclose = () => { 
+                setDisconnected("LOST"); 
+                setTimeout(connect, 5000); 
+            };
+            socket.onerror = () => socket.close();
+        }
+
+        function updateChart(newBpm) {
+            rawHistory.push(newBpm);
+            if (rawHistory.length > windowSize) rawHistory.shift();
+            const avg = rawHistory.reduce((a, b) => a + b, 0) / rawHistory.length;
+            
+            smoothHistory.push(avg);
+            if (smoothHistory.length > maxHistory) smoothHistory.shift();
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            if (smoothHistory.length < 2) return;
+
+            const getY = (val) => canvas.height - ((val - 40) / (140 - 40)) * canvas.height;
+
+            ctx.beginPath();
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = cachedColor;
+            ctx.lineJoin = 'round';
+
+            for (let i = 0; i < smoothHistory.length; i++) {
+                const x = (i / (maxHistory - 1)) * canvas.width;
+                const y = getY(smoothHistory[i]);
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+
+            // 绘制渐变
+            const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            const r = parseInt(cachedColor.slice(1, 3), 16);
+            const g = parseInt(cachedColor.slice(3, 5), 16);
+            const b = parseInt(cachedColor.slice(5, 7), 16);
+            const shadowColor = `rgba(${r}, ${g}, ${b}, 0.3)`;
+            gradient.addColorStop(0, shadowColor);
+            gradient.addColorStop(1, 'transparent');
+
+            // 闭合路径以填充阴影
+            ctx.lineTo((smoothHistory.length - 1) / (maxHistory - 1) * canvas.width, canvas.height);
+            ctx.lineTo(0, canvas.height);
+            ctx.closePath();
+            
+            ctx.fillStyle = gradient;
+            ctx.fill();
+        }
+
+        function setDisconnected(text) {
+            if (currentStatus !== 'disconnected') {
+                wrapper.className = 'container disconnected';
+                bpmEl.innerText = text;
+                maxEl.innerText = '--';
+                currentStatus = 'disconnected';
+                cachedColor = THEME_COLORS['disconnected'];
+                rawHistory = [];
+                smoothHistory = [];
+            }
+        }
+
+        // 超时检测
+        setInterval(() => {
+            if (currentStatus !== 'disconnected' && (Date.now() - lastMessageTime > 4000)) {
+                setDisconnected("WAIT");
+            }
+        }, 1000);
+
+        connect();
+    </script>
+</body>
+</html>
