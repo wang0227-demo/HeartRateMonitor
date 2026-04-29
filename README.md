@@ -8,7 +8,7 @@
 <img src="https://github.com/wang0227-demo/HeartRateMonitor/blob/master/resources/GUI.png"/>
 最新版本下载地址：<a href="https://github.com/wang0227-demo/HeartRateMonitor/releases/download/v1.2.0/HeartRateMonitor.rar">HeartRateMonitor v1.2.0</a>
 
-所需素材模板在文件夹 resources 请自行下载
+所需素材模板在文件夹 resources 
 
 ## 🌟 核心功能
 
