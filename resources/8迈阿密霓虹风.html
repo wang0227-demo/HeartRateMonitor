@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { background: transparent; overflow: hidden; margin: 0; padding: 20px; }
+        /* 混搭字体：主数值用斜体，副标签用等宽，制造 80s 专辑封面感 */
+        .container { 
+            display: flex; align-items: baseline; 
+            font-family: 'Trebuchet MS', 'Arial Black', sans-serif; font-style: italic;
+            transition: all 0.4s ease;
+        }
+        .heart { margin-right: 15px; font-size: 45px; display: inline-block; filter: drop-shadow(0 0 10px #ff00ff); }
+        
+        #bpm { 
+            font-size: 85px; min-width: 100px; text-align: center; font-weight: 900;
+            background: linear-gradient(to bottom, #00ffff 0%, #ff00ff 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            filter: drop-shadow(0 0 8px rgba(255, 0, 255, 0.6));
+        }
+        
+        .max-info { display: flex; flex-direction: column; justify-content: center; margin-left: 20px; font-family: 'Courier New', monospace; font-style: normal; font-weight: bold; }
+        .max-label { font-size: 14px; color: #00ffff; text-shadow: 0 0 5px #00ffff; margin-bottom: -5px; }
+        #maxBpm { font-size: 30px; color: #ff00ff; text-shadow: 0 0 8px #ff00ff; }
+
+        /* 迷幻霓虹呼吸动效 */
+        @keyframes synth-pulse { 
+            0% { transform: scale(1); filter: hue-rotate(0deg); } 
+            50% { transform: scale(1.2); filter: hue-rotate(-20deg) brightness(1.2); } 
+            100% { transform: scale(1); filter: hue-rotate(0deg); } 
+        }
+
+        /* 状态控制（蒸汽波风格不太需要变得极其血腥，主要靠频率改变） */
+        .status-normal .heart { animation: synth-pulse 1s infinite ease-in-out; }
+        
+        /* 变暖色调 */
+        .status-warning #bpm { background: linear-gradient(to bottom, #ffea00 0%, #ff00aa 100%); -webkit-background-clip: text; }
+        .status-warning .heart { animation: synth-pulse 0.5s infinite ease-in-out; filter: drop-shadow(0 0 15px #ffea00); }
+
+        /* 高速迷幻闪烁 */
+        .status-danger #bpm { background: linear-gradient(to bottom, #ffffff 0%, #ff0055 100%); -webkit-background-clip: text; animation: glitch 0.2s infinite; }
+        .status-danger .heart { animation: synth-pulse 0.25s infinite ease-in-out; filter: drop-shadow(0 0 20px #ff0055); }
+
+        @keyframes glitch { 
+            0%, 100% { transform: translateX(0); } 
+            50% { transform: translateX(2px) skewX(5deg); } 
+        }
+
+        .disconnected { opacity: 0.4; filter: grayscale(1); }
+        .disconnected .heart { animation: none !important; filter: none; }
+        .disconnected #bpm { background: #555; -webkit-background-clip: text; filter: none; }
+    </style>
+</head>
+<body>
+    <div id="wrapper" class="container disconnected">
+        <span id="heartIcon" class="heart">💜</span>
+        <span id="bpm">--</span>
+        <div class="max-info">
+            <span class="max-label">PEAK</span>
+            <span id="maxBpm">--</span>
+        </div>
+    </div>
+
+    <script>
+        let socket = null; let lastMessageTime = Date.now();
+        let currentStatus = 'disconnected'; let currentHR = '--'; let currentMax = '--';
+        const bpmEl = document.getElementById('bpm'); const maxEl = document.getElementById('maxBpm'); const wrapper = document.getElementById('wrapper');
+
+        function connect() {
+            if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+            socket = new WebSocket('ws://127.0.0.1:8001');
+            socket.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data); lastMessageTime = Date.now();
+                    if (data.connected && data.heart_rate > 0) {
+                        const hr = data.heart_rate; const max = data.max_heart_rate || '--';
+                        if (hr !== currentHR) { bpmEl.innerText = hr; currentHR = hr; }
+                        if (max !== currentMax) { maxEl.innerText = max; currentMax = max; }
+                        let targetStatus = 'status-normal';
+                        if (hr >= 120) targetStatus = 'status-danger';
+                        else if (hr >= 100) targetStatus = 'status-warning';
+                        if (currentStatus !== targetStatus) {
+                            wrapper.classList.remove('disconnected', 'status-normal', 'status-warning', 'status-danger');
+                            wrapper.classList.add(targetStatus); currentStatus = targetStatus;
+                        }
+                    } else { updateStateToDisconnected("OFF"); }
+                } catch (e) { console.error("Data error:", e); }
+            };
+            socket.onclose = () => { updateStateToDisconnected("LOST"); setTimeout(connect, 5000); };
+            socket.onerror = () => { socket.close(); };
+        }
+        function updateStateToDisconnected(text) {
+            if (currentStatus !== 'disconnected') {
+                wrapper.className = 'container disconnected'; bpmEl.innerText = text; maxEl.innerText = '--';
+                currentStatus = 'disconnected'; currentHR = '--'; currentMax = '--';
+            }
+        }
+        setInterval(() => { if (currentStatus !== 'disconnected' && (Date.now() - lastMessageTime > 4000)) updateStateToDisconnected("WAIT"); }, 1000);
+        connect();
+    </script>
+</body>
+</html>

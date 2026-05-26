@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { background: transparent; overflow: hidden; margin: 0; padding: 20px; }
+        
+        /* 软萌猫耳/蝴蝶结质感的粉色气泡 */
+        .container { 
+            display: flex; align-items: center; 
+            font-family: 'Comic Sans MS', 'Microsoft YaHei', sans-serif;
+            background: linear-gradient(135deg, #fff0f5 0%, #ffe4e1 100%);
+            border: 3px solid #ffb6c1;
+            border-radius: 30px 10px 30px 10px; /* 不对称萌系圆角 */
+            padding: 10px 25px;
+            box-shadow: 0 8px 0px #ffb6c1, 0 10px 20px rgba(255, 182, 193, 0.4);
+            position: relative;
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        /* 梦幻软绵绵的 Q 弹跳动 */
+        @keyframes kawaii-bounce { 
+            0%, 100% { transform: scale(1) translateY(0); } 
+            50% { transform: scale(1.15) translateY(-5px); filter: drop-shadow(0 5px 5px rgba(255,105,180,0.3)); } 
+        }
+
+        .heart { margin-right: 15px; font-size: 45px; display: inline-block; filter: drop-shadow(0 2px 2px rgba(0,0,0,0.1)); }
+        
+        /* 奶油果冻字 */
+        #bpm { 
+            font-size: 75px; min-width: 90px; text-align: center; font-weight: 900;
+            color: #ff69b4;
+            text-shadow: 2px 2px 0px #fff, 4px 4px 0px #ffb6c1;
+        }
+        
+        .max-info { display: flex; flex-direction: column; align-items: center; margin-left: 15px; background: #fff; padding: 5px 10px; border-radius: 15px; border: 2px dashed #ff69b4; }
+        .max-label { font-size: 11px; color: #ffb6c1; font-weight: bold; letter-spacing: 1px; }
+        #maxBpm { font-size: 24px; color: #ff69b4; font-weight: bold; }
+
+        /* 状态微调：正常粉嫩 -> 警告羞红 -> 狂暴极光粉 */
+        .status-normal .heart { animation: kawaii-bounce 1s infinite ease-in-out; }
+
+        .status-warning { background: linear-gradient(135deg, #ffe4e1 0%, #ffb6c1 100%); border-color: #ff69b4; box-shadow: 0 8px 0px #ff69b4; }
+        .status-warning #bpm { color: #fff; text-shadow: 2px 2px 0px #ff69b4, 4px 4px 0px #ff1493; }
+        .status-warning .heart { animation: kawaii-bounce 0.5s infinite ease-in-out; }
+
+        /* 极度心动/傲娇破防：背景疯狂泛起爱心发光，字体变深红 */
+        @keyframes panic-glow { 0%, 100% { box-shadow: 0 8px 0px #ff1493, 0 0 20px #ff1493; } 50% { box-shadow: 0 8px 0px #ff69b4, 0 0 5px #ff69b4; } }
+        .status-danger { background: linear-gradient(135deg, #ffb6c1 0%, #ff1493 100%); border-color: #fff; animation: panic-glow 0.4s infinite; }
+        .status-danger #bpm { color: #fff; text-shadow: 3px 3px 0px #8b008b; animation: kawaii-bounce 0.2s infinite alternate; }
+        .status-danger .max-info { border-color: #fff; background: #ff1493; }
+        .status-danger .max-label { color: #fff; }
+        .status-danger #maxBpm { color: #fff; }
+        .status-danger .heart { animation: kawaii-bounce 0.25s infinite ease-in-out; }
+
+        .disconnected { background: #f5f5f5; border-color: #ddd; box-shadow: 0 8px 0px #ddd; opacity: 0.6; }
+        .disconnected #bpm { color: #aaa; text-shadow: none; }
+        .disconnected .heart { animation: none !important; }
+    </style>
+</head>
+<body>
+    <div id="wrapper" class="container disconnected">
+        <span id="heartIcon" class="heart">💝</span>
+        <span id="bpm">--</span>
+        <div class="max-info">
+            <span class="max-label">MAX</span>
+            <span id="maxBpm">--</span>
+        </div>
+    </div>
+
+    <script>
+        let socket = null; let lastMessageTime = Date.now();
+        let currentStatus = 'disconnected'; let currentHR = '--'; let currentMax = '--';
+        const bpmEl = document.getElementById('bpm'); const maxEl = document.getElementById('maxBpm'); const wrapper = document.getElementById('wrapper');
+        const iconEl = document.getElementById('heartIcon');
+
+        function connect() {
+            if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+            socket = new WebSocket('ws://127.0.0.1:8001');
+            socket.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data); lastMessageTime = Date.now();
+                    if (data.connected && data.heart_rate > 0) {
+                        const hr = data.heart_rate; const max = data.max_heart_rate || '--';
+                        if (hr !== currentHR) { bpmEl.innerText = hr; currentHR = hr; }
+                        if (max !== currentMax) { maxEl.innerText = max; currentMax = max; }
+                        let targetStatus = 'status-normal';
+                        if (hr >= 120) targetStatus = 'status-danger';
+                        else if (hr >= 100) targetStatus = 'status-warning';
+                        if (currentStatus !== targetStatus) {
+                            wrapper.classList.remove('disconnected', 'status-normal', 'status-warning', 'status-danger');
+                            wrapper.classList.add(targetStatus);
+                            // 动态切换二次元表情图标
+                            if (targetStatus === 'status-danger') iconEl.innerText = '💢'; // 破防/暴怒
+                            else if (targetStatus === 'status-warning') iconEl.innerText = '💖'; // 心动
+                            else iconEl.innerText = '💝'; 
+                            currentStatus = targetStatus;
+                        }
+                    } else { updateStateToDisconnected("QAQ"); }
+                } catch (e) { console.error("Data error:", e); }
+            };
+            socket.onclose = () => { updateStateToDisconnected("MUA"); setTimeout(connect, 5000); };
+            socket.onerror = () => { socket.close(); };
+        }
+        function updateStateToDisconnected(text) {
+            if (currentStatus !== 'disconnected') {
+                wrapper.className = 'container disconnected'; bpmEl.innerText = text; maxEl.innerText = '--';
+                iconEl.innerText = '💤'; currentStatus = 'disconnected'; currentHR = '--'; currentMax = '--';
+            }
+        }
+        setInterval(() => { if (currentStatus !== 'disconnected' && (Date.now() - lastMessageTime > 4000)) updateStateToDisconnected("WAIT"); }, 1000);
+        connect();
+    </script>
+</body>
+</html>

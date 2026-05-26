@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { background: transparent; overflow: hidden; margin: 0; padding: 20px; }
+        
+        /* 悬浮纯文本命令行流 */
+        .container { 
+            display: flex; align-items: center; 
+            font-family: 'Courier New', Courier, monospace; font-weight: bold;
+            color: #00ff00; /* 黑客绿 */
+            text-shadow: 0 0 3px #00ff00;
+        }
+
+        .heart { font-size: 24px; margin-right: 15px; }
+        
+        #bpm { font-size: 60px; font-family: monospace; }
+        #bpm::after { content: ' BPM'; font-size: 16px; opacity: 0.7; }
+        
+        /* 纯文本渲染的动态进度条 */
+        #asciiBar { font-size: 20px; margin-left: 20px; letter-spacing: -1px; }
+
+        .max-info { margin-left: 20px; font-size: 14px; opacity: 0.7; }
+
+        /* 文本颜色随状态改变，进度条在Danger时会疯狂闪烁 */
+        @keyframes text-flash { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+        
+        .status-normal { color: #00ff00; text-shadow: 0 0 3px #00ff00; }
+        .status-warning { color: #ffff00; text-shadow: 0 0 3px #ffff00; }
+        .status-danger { color: #ff0000; text-shadow: 0 0 5px #ff0000; }
+        .status-danger #asciiBar { animation: text-flash 0.2s infinite; }
+
+        .disconnected { color: #444 !important; text-shadow: none !important; }
+    </style>
+</head>
+<body>
+    <div id="wrapper" class="container disconnected">
+        <span class="heart">&lt;3</span>
+        <span id="bpm">--</span>
+        <span id="asciiBar">[----------]</span>
+        <div class="max-info">
+            MAX:<span id="maxBpm">--</span>
+        </div>
+    </div>
+
+    <script>
+        let socket = null; let lastMessageTime = Date.now();
+        let currentStatus = 'disconnected'; let currentHR = '--'; let currentMax = '--';
+        const bpmEl = document.getElementById('bpm'); const maxEl = document.getElementById('maxBpm'); const wrapper = document.getElementById('wrapper');
+        const barEl = document.getElementById('asciiBar');
+
+        // 根据心率动态计算 ASCII 进度条格数
+        function updateAsciiBar(hr) {
+            if (isNaN(hr)) { barEl.innerText = "[----------]"; return; }
+            const maxBars = 10;
+            // 假设心率从 60 到 160 映射到 1 到 10 格
+            let fillCount = Math.round(((hr - 60) / 100) * maxBars);
+            fillCount = Math.max(1, Math.min(maxBars, fillCount)); // 限制在 1-10 之间
+            let barStr = '[' + '■'.repeat(fillCount) + '□'.repeat(maxBars - fillCount) + ']';
+            barEl.innerText = barStr;
+        }
+
+        function connect() {
+            if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+            socket = new WebSocket('ws://127.0.0.1:8001');
+            socket.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data); lastMessageTime = Date.now();
+                    if (data.connected && data.heart_rate > 0) {
+                        const hr = data.heart_rate; const max = data.max_heart_rate || '--';
+                        if (hr !== currentHR) { bpmEl.innerText = hr; currentHR = hr; updateAsciiBar(hr); }
+                        if (max !== currentMax) { maxEl.innerText = max; currentMax = max; }
+                        let targetStatus = 'status-normal';
+                        if (hr >= 120) targetStatus = 'status-danger';
+                        else if (hr >= 100) targetStatus = 'status-warning';
+                        if (currentStatus !== targetStatus) {
+                            wrapper.classList.remove('disconnected', 'status-normal', 'status-warning', 'status-danger');
+                            wrapper.classList.add(targetStatus); currentStatus = targetStatus;
+                        }
+                    } else { updateStateToDisconnected("OFF"); }
+                } catch (e) { console.error("Data error:", e); }
+            };
+            socket.onclose = () => { updateStateToDisconnected("LOST"); setTimeout(connect, 5000); };
+            socket.onerror = () => { socket.close(); };
+        }
+        function updateStateToDisconnected(text) {
+            if (currentStatus !== 'disconnected') {
+                wrapper.className = 'container disconnected'; bpmEl.innerText = text; maxEl.innerText = '---';
+                barEl.innerText = "[----------]"; currentStatus = 'disconnected'; currentHR = '--'; currentMax = '--';
+            }
+        }
+        setInterval(() => { if (currentStatus !== 'disconnected' && (Date.now() - lastMessageTime > 4000)) updateStateToDisconnected("STBY"); }, 1000);
+        connect();
+    </script>
+</body>
+</html>
