@@ -62,6 +62,7 @@
 本项目灵感源自开源项目 <a href="https://github.com/ccc007ccc/HeartRateMonitor">HeartRateMonitor</a>，并针对其实际应用中的局限性进行了深度定制：旨在提供更稳定、高效的心率监测方案。
 
 🌟 使用说明
+
 一、	设备准备：请确保你的电脑支持无线蓝牙且你的心率设备处于心率广播模式。
 
 二、	打开软件：初次扫描设备一定要先打开设备的心率广播模式，然后再扫描（不然无法获取设备真实的mac地址）。在软件左下角“连接控制”面板点击扫描，然后锁定你的设备，点击连接。一般情况几秒钟就可以连上了。连接成功以后你就可以看到心率在实时变动了。如果软件使用频率较高，建议可以勾选自动连接，这样会比较方便。
@@ -77,14 +78,17 @@
 
 
 四、	OBS使用方法 
+
 1、	点亮实时状态右上角的文本图标后会在软件目录下生成一个obs_hr.txt的文件，然后OBS添加源-文本（GDI+）-勾选从文件读取-然后浏览选中软件目录下的obs_hr.txt文件即可（这种方式比较简单）
  <img src="https://github.com/wang0227-demo/HeartRateMonitor/blob/master/resources/444.png"/>
+
 
 2、	选择你喜欢的模式WebSocket / API启动服务（两种获取方式都差不多），然后OBS添加源-浏览器-勾选本地文件-然后浏览选中对应的模板文件即可（每个模板都有3种动态显示效果，根据心率不同而触发。这种方式显示效果较好）
 
 注意事项 API、WebSocket默认端口（8000、8001），有时候会存在被其他软件占用的情况。这时候我们只需要将其修改为其他可用端口即可。然后我们还需要同步修改html模板文件里面的默认端口（可直接搜索8000、8001替换即可）
 
 30+不同心率显示模板效果展示（参考）
+
  <img src="https://github.com/wang0227-demo/HeartRateMonitor/blob/master/resources/111.png"/>
  <img src="https://github.com/wang0227-demo/HeartRateMonitor/blob/master/resources/222.png"/>
 
