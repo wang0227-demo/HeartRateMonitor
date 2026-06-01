@@ -44,31 +44,6 @@
 3. 点击 **“扫描设备”**，在弹窗中选择你的心率带/手表/手环。
 4. 点击 **“连接”** 即可开始监控。
 
-## 🌟 使用说明书
-
-一、蓝牙连接指南
-设备准备：请确保心率设备未被手机 App 占用，且处于心率广播模式。
-扫描与锁定：在“连接控制”面板点击扫描。如果搜不到，请尝试关闭并重新开启电脑蓝牙。
-自动重连：程序会自动尝试重连。如果心率数值 15 秒不更新，看门狗会强制重启连接链路。
-
-二、OBS 推送设置 (WebSocket)
-在主界面“WebSocket 服务器”栏勾选“启用” 。
-在 OBS 中添加一个“浏览器源”，URL 指向你的本地 OBS 页面模板即可（内置3种不同动态显示效果）。
-若心率重置，WebSocket 会同步发送 max_heart_rate: 0 。
-
-<img src="https://github.com/wang0227-demo/HeartRateMonitor/blob/master/resources/111.png"/>
-<img src="https://github.com/wang0227-demo/HeartRateMonitor/blob/master/resources/222.png"/>
-<img src="https://github.com/wang0227-demo/HeartRateMonitor/blob/master/resources/333.png"/>
-三、Webhook 报警设置
-点击“打开 Webhook 设置” 。
-同步预设：点击“同步官方预设”可以从 GitHub 获取飞书、钉钉等常用配置。
-参数过滤：你可以设置“报警阈值”和“冷却时间”，防止心率波动导致机器人频繁刷屏。
-
-四、悬浮窗操作
-解锁状态：可以自由拖动位置。
-锁定状态：背景变为透明（或自定义颜色），且鼠标点击会直接穿透到后方的游戏或窗口 。
-格式化：在格式栏输入 {img}{bpm} 可同时显示心率图标和数字。
-
 ## 🛠️ 开发者笔记
 
 本项目基于<a href="https://github.com/ccc007ccc/HeartRateMonitor">[HeartRateMonitor]</a>的功能逻辑进行二次开发。
@@ -86,3 +61,37 @@
 
 本项目灵感源自开源项目 <a href="https://github.com/ccc007ccc/HeartRateMonitor">HeartRateMonitor</a>，并针对其实际应用中的局限性进行了深度定制：旨在提供更稳定、高效的心率监测方案。
 
+🌟 使用说明
+一、	设备准备：请确保你的电脑支持无线蓝牙且你的心率设备处于心率广播模式。
+
+二、	打开软件：初次扫描设备一定要先打开设备的心率广播模式，然后再扫描（不然无法获取设备真实的mac地址）。在软件左下角“连接控制”面板点击扫描，然后锁定你的设备，点击连接。一般情况几秒钟就可以连上了。连接成功以后你就可以看到心率在实时变动了。如果软件使用频率较高，建议可以勾选自动连接，这样会比较方便。
+
+三、	功能介绍：支持实时同步心率到VRChat聊天框、多种心率获取方式（支持WebSocket、API、文本读取等）、支持Webhook联动（如飞书、钉钉、IFTTT等可定制各种提醒联动事件驱动等）、支持悬浮窗模式（让你在游戏的时候也能轻松看到自己的心率情况）、支持设备电量查看（注意：仅对符合协议标准的设备有效）、支持语音提醒功能、精彩时刻【截屏】、自定义看板娘功能等
+<img src="https://github.com/wang0227-demo/HeartRateMonitor/blob/master/resources/333.png"/>
+ 
+语音提醒功能 在心率异常的时候会有语音提醒
+
+精彩时刻【截屏】 在心率异常的时候会自动截屏 保存在软件的screenshots目录下
+
+自定义看板娘功能介绍 点亮换肤图标，软件会自动在软件目录生成\resources\skins文件夹 你只需要将自己喜欢的动态图片放到skins目录即可（请注意命名规范，至少要包含pet_idle_1.gif、pet_idle_2.gif、pet_idle_3.gif这3个文件名的有效文件）
+
+
+四、	OBS使用方法 
+1、	点亮实时状态右上角的文本图标后会在软件目录下生成一个obs_hr.txt的文件，然后OBS添加源-文本（GDI+）-勾选从文件读取-然后浏览选中软件目录下的obs_hr.txt文件即可（这种方式比较简单）
+ <img src="https://github.com/wang0227-demo/HeartRateMonitor/blob/master/resources/444.png"/>
+
+2、	选择你喜欢的模式WebSocket / API启动服务（两种获取方式都差不多），然后OBS添加源-浏览器-勾选本地文件-然后浏览选中对应的模板文件即可（每个模板都有3种动态显示效果，根据心率不同而触发。这种方式显示效果较好）
+
+注意事项 API、WebSocket默认端口（8000、8001），有时候会存在被其他软件占用的情况。这时候我们只需要将其修改为其他可用端口即可。然后我们还需要同步修改html模板文件里面的默认端口（可直接搜索8000、8001替换即可）
+
+30+不同心率显示模板效果展示（参考）
+ <img src="https://github.com/wang0227-demo/HeartRateMonitor/blob/master/resources/111.png"/>
+ <img src="https://github.com/wang0227-demo/HeartRateMonitor/blob/master/resources/222.png"/>
+
+模板文件默认为WebSocket模式，如果你需要使用API 模式，请参考obs_api.html进行修改（只需要将<script></script>里面的内容替换掉即可）
+
+obs_api.htm、obs_api2.htm一个是不带趋势图、一个是带趋势图的模板
+
+obs设置建议
+不带趋势图的obs浏览器建议设置大小 400*200
+带趋势图的obs浏览器建议设置大小 800*200  
