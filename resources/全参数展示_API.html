@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>OBS 医疗级一体化监护仪（严谨对称微调版）</title>
+    <style>
+        body { background: transparent; overflow: hidden; margin: 0; padding: 20px; }
+        
+        /* 🌟 一体化深邃监视器底衬（使用严格居中轴线） */
+        .container { 
+            display: inline-flex; 
+            align-items: center; /* 左右两侧组件绝对垂直中轴线对齐 */
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, monospace;
+            background: #030a05; 
+            border: 2px solid #00441a;
+            border-radius: 4px;
+            padding: 24px 24px 16px 24px; /* 微调内边距，为顶部悬浮页眉留出纯净空间 */
+            position: relative;
+            
+            /* 超级医疗微网格 */
+            background-image: 
+                linear-gradient(rgba(0, 255, 102, 0.07) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 255, 102, 0.07) 1px, transparent 1px),
+                linear-gradient(rgba(0, 255, 102, 0.02) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 255, 102, 0.02) 1px, transparent 1px);
+            background-size: 50px 50px, 50px 50px, 10px 10px, 10px 10px;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: inset 0 0 30px rgba(0, 255, 102, 0.15), 0 4px 20px rgba(0,0,0,0.8);
+        }
+
+        /* 🌟 医疗级左上角页眉层：完全绝对定位悬浮，不挤压心电图纵向空间 */
+        .meta-panel {
+            position: absolute;
+            top: 8px;
+            left: 24px;
+            display: flex;
+            align-items: center;
+            font-size: 10px;
+            font-weight: bold;
+            letter-spacing: 1.5px;
+            z-index: 10;
+            opacity: 0.75;
+        }
+        .heart { margin-right: 6px; font-size: 10px; }
+        .ecg-label { font-size: 10px; font-family: monospace; font-weight: 600; }
+        
+        @keyframes medical-dot { 
+            0%, 100% { opacity: 0.3; transform: scale(0.9); filter: drop-shadow(0 0 0px currentColor); } 
+            20% { opacity: 1; transform: scale(1.2); filter: drop-shadow(0 0 4px currentColor); } 
+        }
+
+        /* 🌟 左侧波形盒子：配合容器实现纯物理中轴居中 */
+        .ecg-box {
+            position: relative;
+            width: 340px;
+            height: 100px; /* 紧凑波形高度，使其更居中，减少上下死区空间 */
+            margin-right: 24px;
+            background: transparent !important;
+            display: flex;
+            align-items: center;
+        }
+        canvas { 
+            display: block; 
+            background: transparent !important;
+            mix-blend-mode: screen; 
+        }
+        
+        /* 🌟 右侧数据总容器：通过相对定位和内边距完美物理居中 */
+        .data-container {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            position: relative;
+            height: 100px; /* 与波形盒子完美等高，用于轴线对齐 */
+        }
+
+        /* 🌟 电池和 RSSI 信息面板：往上靠齐，贴紧组件顶部，与左边页眉处于同等视觉高度 */
+        .device-info-panel {
+            position: absolute;
+            top: -14px; /* 强行向上靠 */
+            right: 0;
+            display: flex;
+            gap: 14px;
+            font-family: "Courier New", Courier, monospace;
+            font-size: 13px;
+            font-weight: bold;
+            opacity: 0.7;
+        }
+        .battery-info, .rssi-info {
+            display: flex;
+            align-items: flex-end;
+            gap: 1px;
+        }
+        .info-label {
+            opacity: 0.35;
+            font-size: 11px;
+            font-weight: bold;
+            margin-right: 2px;
+        }
+        .info-unit {
+            font-size: 10px;
+            opacity: 0.4;
+            margin-left: 1px;
+        }
+
+        /* 🌟 核心心率与峰值对齐面板：在中部实现纯垂直居中 */
+        .data-panel {
+            display: flex;
+            align-items: center; /* 核心调整：心率大字与 PEAK 垂直居中对齐 */
+            height: 100%;
+        }
+
+        #bpm { 
+            font-size: 76px; /* 微调大字号，使其饱满不溢出 */
+            min-width: 110px; 
+            text-align: left; 
+            font-weight: 900; 
+            font-family: 'Arial Black', sans-serif; 
+            line-height: 1; 
+            letter-spacing: -2px; 
+            font-variant-numeric: tabular-nums; /* 启用等宽数字，彻底防止位数变动时排版跳动 */
+        }
+        
+        /* 峰值信息独立对齐块 */
+        .max-info { 
+            display: flex; 
+            flex-direction: column; 
+            justify-content: center; 
+            align-items: flex-start; /* 改为左对齐，增强阅读连贯性 */  
+            margin-left: 10px;
+            font-family: monospace;
+            line-height: 1.1;
+        }
+        .max-label { 
+            opacity: 0.35; 
+            font-weight: 900; 
+            font-size: 14px;  
+            letter-spacing: 1px;
+        }
+        #maxBpm { 
+            font-size: 32px;  
+            font-weight: bold; 
+            letter-spacing: -1px;
+        }
+
+        /* 危机警报灯 */
+        .alarm-tag { 
+            display: none; 
+            margin-left: 14px; 
+            font-size: 13px; 
+            font-weight: 900; 
+            background: #ff0033; 
+            color: #fff; 
+            padding: 2px 6px; 
+            border-radius: 2px; 
+            letter-spacing: 1px;
+            animation: blink 0.4s infinite step-start; 
+            box-shadow: 0 0 10px rgba(255,0,51,0.5); 
+        }
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+
+        /* 🌟 状态动态色彩 */
+        .status-normal { color: #00ff66; border-color: #00441a; }
+        .status-normal .heart { animation: medical-dot 0.8s infinite ease-in-out; }
+        
+        .status-warning { color: #ffcc00; border-color: #554400; background-color: #080600; box-shadow: inset 0 0 30px rgba(255, 204, 0, 0.08), 0 4px 20px rgba(0,0,0,0.8); }
+        .status-warning .heart { animation: medical-dot 0.4s infinite ease-in-out; }
+
+        .status-danger { color: #ff0033; border-color: #4a0008; background-color: #080002; box-shadow: inset 0 0 35px rgba(255, 0, 51, 0.12), 0 4px 20px rgba(0,0,0,0.8); }
+        .status-danger { animation: screen-flash 0.5s infinite alternate; }
+        @keyframes screen-flash { 0% { border-color: #4a0008; } 100% { border-color: #8a0010; } }
+        .status-danger .heart { animation: medical-dot 0.18s infinite ease-in-out; }
+        .status-danger .alarm-tag { display: inline-block; } 
+
+        /* 离线/未连接 */
+        .disconnected { color: #222824 !important; border-color: #111512 !important; background: #010302 !important; box-shadow: none !important; }
+        .disconnected .heart { animation: none !important; color: #222824 !important; }
+        .disconnected .ecg-label { opacity: 0.2; }
+        .disconnected .device-info-panel { opacity: 0.15; }
+    </style>
+</head>
+<body>
+    <div id="wrapper" class="container disconnected">
+        <div class="meta-panel">
+            <span id="heartIcon" class="heart">●</span>
+            <span class="ecg-label">ECG REALTIME</span>
+        </div>
+
+        <div class="ecg-box">
+            <canvas id="ecgCanvas" width="340" height="100"></canvas>
+        </div>
+
+        <div class="data-container">
+            <div class="device-info-panel">
+                <div class="battery-info">
+                    <span class="info-label">BAT</span>
+                    <span id="battery">--</span><span class="info-unit">%</span>
+                </div>
+                <div class="rssi-info">
+                    <span class="info-label">RSSI</span>
+                    <span id="rssi">--</span><span class="info-unit">dBm</span>
+                </div>
+            </div>
+            
+            <div class="data-panel">
+                <span id="bpm">--</span>
+                <div class="max-info">
+                    <span class="max-label">PEAK</span>
+                    <span id="maxBpm">--</span>
+                </div>
+                <span class="alarm-tag">ALARM</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let lastMessageTime = Date.now();
+        let currentStatus = 'disconnected'; 
+        let currentHR = '--'; 
+        let currentMax = '--';
+        let currentBattery = '--';
+        let currentRSSI = '--';
+
+        // ========== 这里修改为你的 HTTP API 地址 ==========
+        const API_URL = "http://127.0.0.1:8000/heartrate";
+        const POLL_INTERVAL = 800; // 轮询间隔 800ms，可自行调整
+
+        const bpmEl = document.getElementById('bpm'); 
+        const maxEl = document.getElementById('maxBpm'); 
+        const batteryEl = document.getElementById('battery');
+        const rssiEl = document.getElementById('rssi');
+        const wrapper = document.getElementById('wrapper');
+        
+        const canvas = document.getElementById('ecgCanvas');
+        const ctx = canvas.getContext('2d');
+        const width = canvas.width;
+        const height = canvas.height;
+        
+        let points = new Array(width).fill(height / 2);
+        let scanX = 0;        
+        let ecgPhase = 0;     
+
+        function getEcgY() {
+            if (currentStatus === 'disconnected' || isNaN(currentHR)) {
+                return (height / 2) + (Math.random() - 0.5) * 0.4;
+            }
+
+            const bpm = parseInt(currentHR);
+            const framesPerBeat = Math.max(20, Math.floor(3600 / bpm));
+            ecgPhase++;
+            
+            if (ecgPhase >= framesPerBeat) { ecgPhase = 0; }
+
+            const progress = ecgPhase / framesPerBeat;
+            const midY = height / 2;
+
+            // 基于 100px 压缩后的标准医疗波形幅度比率
+            if (progress > 0.0 && progress < 0.05) { 
+                return midY - 5 * Math.sin((progress / 0.05) * Math.PI);
+            }
+            if (progress >= 0.07 && progress < 0.09) { 
+                return midY + 6 * ((progress - 0.07) / 0.02);
+            }
+            if (progress >= 0.09 && progress < 0.13) { 
+                return midY - 42 * Math.sin(((progress - 0.09) / 0.04) * Math.PI);
+            }
+            if (progress >= 0.13 && progress < 0.16) { 
+                return midY + 11 * Math.sin(((progress - 0.13) / 0.03) * Math.PI);
+            }
+            if (progress >= 0.22 && progress < 0.32) { 
+                return midY - 8 * Math.sin(((progress - 0.22) / 0.10) * Math.PI);
+            }
+            
+            return midY + (Math.random() - 0.5) * 0.6;
+        }
+
+        function drawECG() {
+            ctx.globalCompositeOperation = 'destination-in';
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.85)'; 
+            ctx.fillRect(0, 0, width, height);
+            
+            ctx.globalCompositeOperation = 'source-over';
+
+            const nextY = getEcgY();
+            points[scanX] = nextY;
+
+            let strokeColor = 'rgba(35, 42, 38, 1)'; 
+            let glowColor = 'rgba(0, 0, 0, 0)';
+            
+            if (currentStatus === 'status-normal') {
+                strokeColor = 'rgba(0, 255, 102, 1)';   
+                glowColor = 'rgba(0, 255, 102, 0.35)';
+            } else if (currentStatus === 'status-warning') {
+                strokeColor = 'rgba(255, 204, 0, 1)';   
+                glowColor = 'rgba(255, 204, 0, 0.35)';
+            } else if (currentStatus === 'status-danger') {
+                strokeColor = 'rgba(255, 0, 51, 1)';    
+                glowColor = 'rgba(255, 0, 51, 0.5)';
+            }
+
+            ctx.strokeStyle = strokeColor;
+            ctx.shadowColor = glowColor;
+            ctx.shadowBlur = currentStatus !== 'disconnected' ? 10 : 0; 
+            ctx.lineWidth = 2.2; 
+
+            ctx.beginPath();
+            let isFirst = true;
+
+            for (let i = 0; i < width; i++) {
+                if (Math.abs(i - scanX) < 16) { 
+                    isFirst = true;
+                    continue;
+                }
+                if (isFirst) {
+                    ctx.moveTo(i, points[i]);
+                    isFirst = false;
+                } else {
+                    ctx.lineTo(i, points[i]);
+                }
+            }
+            ctx.stroke();
+
+            if (currentStatus !== 'disconnected') {
+                ctx.fillStyle = '#ffffff';
+                ctx.shadowBlur = 5;
+                ctx.beginPath();
+                ctx.arc(scanX, nextY, 2.2, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            scanX = (scanX + 2) % width;
+            requestAnimationFrame(drawECG);
+        }
+
+        // HTTP API 轮询获取数据
+        async function fetchData() {
+            try {
+                const res = await fetch(API_URL, {
+                    method: "GET",
+                    headers: {
+                        "Content-Type": "application/json"
+                    }
+                });
+
+                if (!res.ok) throw new Error("API error");
+                const data = await res.json();
+                lastMessageTime = Date.now();
+
+                if (data.connected && data.heart_rate > 0) {
+                    const hr = data.heart_rate; 
+                    const max = data.max_heart_rate || '--';
+                    const battery = data.battery || '--';
+                    const rssi = data.rssi || '--';
+                    
+                    if (hr !== currentHR) { bpmEl.innerText = hr; currentHR = hr; }
+                    if (max !== currentMax) { maxEl.innerText = max; currentMax = max; }
+                    if (battery !== currentBattery) { batteryEl.innerText = battery; currentBattery = battery; }
+                    if (rssi !== currentRSSI) { rssiEl.innerText = rssi; currentRSSI = rssi; }
+                    
+                    let targetStatus = 'status-normal';
+                    if (hr >= 120) targetStatus = 'status-danger';
+                    else if (hr >= 100) targetStatus = 'status-warning';
+                    
+                    if (currentStatus !== targetStatus) {
+                        wrapper.classList.remove('disconnected', 'status-normal', 'status-warning', 'status-danger');
+                        wrapper.classList.add(targetStatus); 
+                        currentStatus = targetStatus;
+                    }
+                } else { 
+                    updateStateToDisconnected("STBY"); 
+                }
+            } catch (err) {
+                console.error("Fetch API failed:", err);
+                updateStateToDisconnected("DISC");
+            }
+        }
+
+        function updateStateToDisconnected(text) {
+            if (currentStatus !== 'disconnected') {
+                wrapper.className = 'container disconnected'; 
+                bpmEl.innerText = text; 
+                maxEl.innerText = '--';
+                batteryEl.innerText = '--';
+                rssiEl.innerText = '--';
+                currentBattery = '--';
+                currentRSSI = '--';
+                
+                currentStatus = 'disconnected'; 
+                currentHR = '--'; 
+                currentMax = '--';
+            }
+        }
+
+        // 超时检测：4秒无新数据则断开
+        setInterval(() => { 
+            if (currentStatus !== 'disconnected' && (Date.now() - lastMessageTime > 4000)) {
+                updateStateToDisconnected("CHECK"); 
+            }
+        }, 1000);
+
+        // 启动轮询
+        setInterval(fetchData, POLL_INTERVAL);
+        // 立即执行一次
+        fetchData();
+
+        // 启动心电绘制
+        drawECG();
+    </script>
+</body>
+</html>

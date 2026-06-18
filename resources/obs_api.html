@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { background: transparent; overflow: hidden; margin: 0; padding: 20px; }
+        
+        .container { 
+            display: flex; align-items: center;
+            font-family: 'Arial Black', sans-serif; 
+            transition: all 0.3s ease;
+        }
+
+        /* --- 红心样式 --- */
+        .heart { 
+            margin-right: 35px; 
+            font-size: 55px; 
+            display: inline-block;
+            filter: drop-shadow(0 0 5px rgba(255,0,0,0.3));
+        }
+
+        #bpm { font-size: 72px; min-width: 90px; text-align: center; }
+        
+        .max-info { 
+            display: flex;
+            flex-direction: column; 
+            align-items: center;    
+            justify-content: center;
+            margin-left: 30px; 
+            line-height: 1.0;       
+        }
+
+        .max-label {
+            font-size: 14px; 
+            color: rgba(255, 255, 255, 0.4); 
+            text-transform: uppercase;
+            font-family: 'Arial', sans-serif;
+            font-weight: bold;
+            margin-bottom: 4px;
+        }
+
+        #maxBpm { font-size: 32px; color: rgba(255, 255, 255, 0.8); }
+
+        /* --- 动态心跳动画 --- */
+        @keyframes beat {
+            0% { transform: scale(1); filter: drop-shadow(0 0 5px rgba(255,0,0,0.2)); }
+            50% { transform: scale(1.35); filter: drop-shadow(0 0 15px rgba(255,0,0,0.6)); }
+            100% { transform: scale(1); filter: drop-shadow(0 0 5px rgba(255,0,0,0.2)); }
+        }
+
+        .status-normal { color: #00ff88; text-shadow: 0 0 15px rgba(0, 255, 136, 0.6); }
+        .status-normal .heart { animation: beat 0.8s infinite cubic-bezier(0.215, 0.61, 0.355, 1); }
+
+        .status-warning { color: #ffaa00; text-shadow: 0 0 20px rgba(255, 170, 0, 0.8); }
+        .status-warning .heart { animation: beat 0.5s infinite; }
+
+        .status-danger { 
+            color: #ff0000; 
+            text-shadow: 0 0 25px #ff0000, 0 0 40px #ff0000;
+            animation: screen-flash 0.4s infinite; 
+        }
+        .status-danger .heart { animation: beat 0.25s infinite; }
+        .status-danger #bpm { animation: shake 0.08s infinite; }
+
+        @keyframes shake {
+            0% { transform: translate(3px, 3px); }
+            50% { transform: translate(-3px, -3px); }
+            100% { transform: translate(3px, -3px); }
+        }
+
+        @keyframes screen-flash { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } }
+
+        .disconnected { color: #555 !important; text-shadow: none !important; opacity: 0.5; }
+        .disconnected .heart { animation: none !important; filter: grayscale(1); }
+    </style>
+</head>
+<body>
+    <div id="wrapper" class="container disconnected">
+        <span id="heartIcon" class="heart">❤️</span>
+        <span id="bpm">--</span>
+        <div class="max-info">
+            <span class="max-label">Peak</span>
+            <span id="maxBpm">--</span>
+        </div>
+    </div>
+
+    <script>
+        let lastMessageTime = Date.now();
+        const bpmEl = document.getElementById('bpm');
+        const maxEl = document.getElementById('maxBpm');
+        const wrapper = document.getElementById('wrapper');
+
+        // --- API 配置 ---
+        const API_URL = 'http://127.0.0.1:8000/heartrate'; 
+        const POLL_INTERVAL = 1000; 
+
+        // 状态缓存，防止重复操作 DOM
+        let lastStatus = 'disconnected';
+        let lastHR = 0;
+        let lastMax = 0;
+
+        async function pollData() {
+            try {
+                const response = await fetch(API_URL);
+                if (!response.ok) throw new Error('OFFLINE');
+                
+                const data = await response.json();
+                lastMessageTime = Date.now();
+
+                if (data.connected && data.heart_rate > 0) {
+                    const hr = data.heart_rate;
+                    const max = data.max_heart_rate || '--';
+
+                    // 1. 仅在心率值改变时更新文本
+                    if (hr !== lastHR) {
+                        bpmEl.innerText = hr;
+                        lastHR = hr;
+                    }
+                    if (max !== lastMax) {
+                        maxEl.innerText = max;
+                        lastMax = max;
+                    }
+
+                    // 2. 状态等级判定
+                    let newStatus = 'status-normal';
+                    if (hr >= 120) newStatus = 'status-danger';
+                    else if (hr >= 100) newStatus = 'status-warning';
+
+                    // 3. 【核心优化】仅在状态等级改变时才切换 Class
+                    if (lastStatus !== newStatus) {
+                        wrapper.classList.remove('disconnected', 'status-normal', 'status-warning', 'status-danger');
+                        wrapper.classList.add(newStatus);
+                        lastStatus = newStatus;
+                    }
+                } else {
+                    updateDisconnectedState("OFF");
+                }
+            } catch (error) {
+                updateDisconnectedState("LOST");
+            } finally {
+                setTimeout(pollData, POLL_INTERVAL);
+            }
+        }
+
+        function updateDisconnectedState(text) {
+            if (lastStatus !== 'disconnected') {
+                wrapper.className = 'container disconnected';
+                bpmEl.innerText = text;
+                maxEl.innerText = '--';
+                lastStatus = 'disconnected';
+                lastHR = 0;
+            }
+        }
+
+        // 超时监测
+        setInterval(() => {
+            if (lastStatus !== 'disconnected' && (Date.now() - lastMessageTime > 3000)) {
+                updateDisconnectedState("WAIT");
+            }
+        }, 1000);
+
+        pollData();
+    </script>
+</body>
+</html>
