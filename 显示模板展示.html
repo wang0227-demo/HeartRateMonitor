@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { 
+            background: #111; 
+            color: white; 
+            font-family: sans-serif; 
+            display: grid; 
+            grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); 
+            gap: 20px; 
+            padding: 20px; 
+        }
+        .template-card { 
+            border: 1px solid #333; 
+            padding: 10px; 
+            border-radius: 8px; 
+            text-align: center; 
+        }
+        /* 新增：确保文件名只显示一行 */
+        .template-card p {
+            margin: 0 0 10px 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        iframe { 
+            width: 100%; 
+            height: 190px; 
+            border: none; 
+            background: #000; 
+            border-radius: 4px; 
+        }
+    </style>
+</head>
+<body>
+    <script>
+        const templates = [
+            "resources/templates/01赛博朋克风.html",
+            "resources/templates/02恐怖游戏风.html",
+            "resources/templates/03萌系奶油风.html",
+            "resources/templates/04像素复古游戏风.html",
+            "resources/templates/05极简毛玻璃.html",
+            "resources/templates/06热血燃烧风.html",
+            "resources/templates/07科幻战术 HUD 风.html",
+            "resources/templates/08迈阿密霓虹风.html",
+            "resources/templates/09魂类游戏风.html",
+            "resources/templates/10美漫波普艺术风.html",
+            "resources/templates/11水滴晶体怀旧风.html",
+            "resources/templates/12代码终端风.html",
+            "resources/templates/13水墨武侠风.html",
+            "resources/templates/14精神病惊悚风.html",
+            "resources/templates/15赌场跑马灯风.html",
+            "resources/templates/16二次元风.html",
+            "resources/templates/17恐怖废旧风.html",
+            "resources/templates/18蒸汽朋克风.html",
+            "resources/templates/19红白机风.html",
+            "resources/templates/20医疗监护仪风.html",
+            "resources/templates/21重金属地狱熔岩风.html",
+            "resources/templates/22薄线竞速风.html",
+            "resources/templates/23故障信号风.html",
+            "resources/templates/24滴落淤泥风.html",
+            "resources/templates/25绝对领域HUD风.html",
+            "resources/templates/26极客纯文本风.html",
+            "resources/templates/27美漫高燃风.html",
+            "resources/templates/28全息线框投影风.html",
+            "resources/templates/29复古打字机.html",
+            "resources/templates/30街机格斗连招风.html",
+            "resources/templates/31经典怀旧风.html",
+            "resources/templates/32战术能量甲风.html",
+            "resources/templates/33RPG 状态栏风.html",
+            "resources/templates/34薄胶囊半透面板风.html",
+            "resources/templates/35垂直无框轻量风.html",
+            "resources/templates/36纯白无框极端数字解构风.html",
+            "resources/templates/37单行全透字形风.html",
+            "resources/templates/38电竞显卡背板散热风.html",
+            "resources/templates/39电影级动态心电图机风.html",
+            "resources/templates/40动态毛玻璃微晕胶囊风.html",
+            "resources/templates/41动态折线图谱风.html",
+            "resources/templates/42复古电玩风.html",
+            "resources/templates/43护盾能量块填充风.html",
+            "resources/templates/44环形座舱战术刻度风.html",
+            "resources/templates/45极端过载进度条风.html",
+            "resources/templates/46极光双环氛围风.html",
+            "resources/templates/47极简代码控制台风.html",
+            "resources/templates/48极简森系.html",
+            "resources/templates/49极致通透悬浮风.html",
+            "resources/templates/50渐变半透毛玻璃风.html",
+            "resources/templates/51竞技超载转速表风.html",
+            "resources/templates/52绝望 DV 录制风.html",
+            "resources/templates/53科幻机甲风.html",
+            "resources/templates/54科幻重工业机甲风.html",
+            "resources/templates/55雷达扫描风.html",
+            "resources/templates/56主角状态进度条风.html",
+            "resources/templates/57模块化网格信息墙风.html",
+            "resources/templates/58霓虹极速重叠风.html",
+            "resources/templates/59霓虹微醺流光风.html",
+            "resources/templates/60拟物化悬浮窗风.html",
+            "resources/templates/61柔和真空发光风.html",
+            "resources/templates/62赛博拼接工业吊牌风.html",
+            "resources/templates/63赛车超跑时速表风.html",
+            "resources/templates/64数字流失真矩阵风.html",
+            "resources/templates/65维多利亚纸艺风.html",
+            "resources/templates/66武器战术 HUD 无框风.html",
+            "resources/templates/67现代潮牌风.html",
+            "resources/templates/68现代车载仪表盘风.html",
+            "resources/templates/69像素暗黑伪描边风.html",
+            "resources/templates/70心电图死线危机风.html",
+            "resources/templates/71新拟物流体微态风.html",
+            "resources/templates/72悬浮侧边栏风.html",
+            "resources/templates/73异形辐射反应堆风.html",
+            "resources/templates/74硬核外骨骼装甲风.html",
+            "resources/templates/75圆形极简环形风.html",
+            "resources/templates/76战术雷达准星风.html",
+            "resources/templates/77战术全透水晶框风.html",
+            "resources/templates/78战术悬浮无框风.html",
+            "resources/templates/79战术鹰眼狙击风.html",
+            "resources/templates/80蒸汽波微醺风.html",
+            "resources/templates/81赛博朋克风格.html",
+            "resources/templates/82极简科技风格.html",
+            "resources/templates/83复古机械风格.html",
+            "resources/templates/84未来全息风格.html",
+            "resources/templates/85长条状态栏风格.html",
+            "resources/templates/86渐变填充进度面板.html",
+            "resources/templates/87像素复古风格.html",
+            "resources/templates/88金属拉丝工业风面板.html",
+            "resources/templates/89钻石切割棱角面板.html",
+            "resources/templates/90机甲分段指示灯面板.html",
+            "resources/templates/91流光电竞横版面板.html",
+            "resources/templates/92半透明叠加层组件.html",
+            "resources/templates/93横向多分区战术控制台.html",
+            "resources/templates/94毛玻璃效果.html",
+            "resources/templates/95霓虹渐变切角横版.html",
+            "resources/templates/96竖条组件.html",
+        ];
+
+        templates.forEach(file => {
+            const card = document.createElement('div');
+            card.className = 'template-card';
+            card.innerHTML = `
+                <p title="${file}">${file}</p>
+                <iframe src="${file}"></iframe>
+            `;
+            document.body.appendChild(card);
+        });
+    </script>
+</body>
+</html>
