@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { background: transparent; overflow: hidden; margin: 0; padding: 20px; }
+        
+        /* 机械切割外骨骼外框 */
+        .container { 
+            display: inline-flex;
+            align-items: center;
+            background: linear-gradient(135deg, #121316 0%, #1c1d22 100%);
+            border: 2px solid #2d3038;
+            padding: 10px 24px;
+            position: relative;
+            box-shadow: 0 12px 30px rgba(0,0,0,0.7), inset 0 0 15px rgba(255, 0, 0, 0.05);
+            font-family: 'Impact', 'Arial Black', sans-serif;
+            /* 纯CSS裁切出两端的硬核电竞斜角 */
+            clip-path: polygon(0 0, 95% 0, 100% 30%, 100% 100%, 5% 100%, 0 70%);
+        }
+
+        /* 战术棱角装饰线与红色灯带 */
+        .container::before {
+            content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+            background: var(--mech-neon, #ff003c);
+            box-shadow: 0 0 12px var(--mech-neon, #ff003c);
+        }
+
+        /* 模拟机械散热格栅 */
+        .grille {
+            display: flex; gap: 3px; margin-right: 18px; opacity: 0.7;
+        }
+        .grille-bar {
+            width: 3px; height: 24px; background: #3a3f4d; transform: skewX(-20deg);
+            transition: background 0.3s;
+        }
+        
+        /* 主数值：倾斜电竞大字 */
+        #bpm { 
+            font-size: 52px; font-weight: 900; color: #ffffff; 
+            line-height: 1; font-style: italic; min-width: 85px; text-align: center;
+            letter-spacing: -1px;
+            text-shadow: 0 0 8px rgba(255,255,255,0.1);
+        }
+        
+        /* 右侧独立切割的最高值面板 */
+        .max-info { 
+            display: flex; flex-direction: column; align-items: flex-start; 
+            margin-left: 20px; padding-left: 16px; border-left: 2px solid #2d3038;
+        }
+        .max-label { font-size: 9px; color: #626875; font-weight: bold; letter-spacing: 1px; font-family: 'Arial', sans-serif;}
+        #maxBpm { font-size: 20px; color: var(--mech-neon, #ff003c); font-weight: bold; font-style: italic; margin-top: 2px; }
+        
+        /* 狂暴状态闪烁 */
+        @keyframes mech-overload {
+            0%, 100% { opacity: 0.4; background: #121316; }
+            50% { opacity: 1; background: #30020b; border-color: #ff003c; }
+        }
+
+        /* 状态设置 */
+        .status-normal { --mech-neon: #ff003c; }
+        
+        .status-warning { --mech-neon: #ff5500; }
+        .status-warning #bpm { color: #ff5500; }
+        
+        .status-danger { --mech-neon: #ff0000; animation: mech-overload 0.3s infinite alternate; }
+        .status-danger .grille-bar { background: #ff0000; box-shadow: 0 0 6px #ff0000; }
+        .status-danger #bpm { transform: scale(1.05); color: #ff0000; text-shadow: 0 0 12px rgba(255,0,0,0.6); }
+
+        /* 断开连接（装甲失去能源） */
+        .disconnected { background: #15161a !important; border-color: #222 !important; clip-path: none !important; box-shadow: none !important; }
+        .disconnected::before { background: #333 !important; box-shadow: none !important; }
+        .disconnected .grille-bar { background: #222 !important; }
+        .disconnected #bpm { color: #3a3d45; font-size: 32px; font-style: normal; }
+        .disconnected .max-info { border-left-color: #222; }
+        .disconnected #maxBpm { color: #3a3d45; font-style: normal; }
+        .disconnected .max-label { color: #2a2c33; }
+    </style>
+</head>
+<body>
+    <div id="wrapper" class="container disconnected">
+        <div class="grille">
+            <div class="grille-bar"></div>
+            <div class="grille-bar"></div>
+            <div class="grille-bar"></div>
+        </div>
+        <span id="bpm">--</span>
+        <div class="max-info">
+            <span class="max-label">LIMIT PEAK</span>
+            <span id="maxBpm">--</span>
+        </div>
+    </div>
+
+    <script>
+        let socket = null;
+        let lastMessageTime = Date.now();
+        let currentStatus = 'disconnected'; 
+        let currentHR = '--';
+        let currentMax = '--';
+
+        const bpmEl = document.getElementById('bpm');
+        const maxEl = document.getElementById('maxBpm');
+        const wrapper = document.getElementById('wrapper');
+
+        function connect() {
+            if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+            socket = new WebSocket('ws://127.0.0.1:8001');
+
+            socket.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    lastMessageTime = Date.now();
+
+                    if (data.connected && data.heart_rate > 0) {
+                        const hr = data.heart_rate;
+                        const max = data.max_heart_rate || '--';
+
+                        if (hr !== currentHR) {
+                            bpmEl.innerText = hr;
+                            currentHR = hr;
+                        }
+                        if (max !== currentMax) {
+                            maxEl.innerText = max;
+                            currentMax = max;
+                        }
+
+                        let targetStatus = 'status-normal';
+                        if (hr >= 120) targetStatus = 'status-danger';
+                        else if (hr >= 100) targetStatus = 'status-warning';
+
+                        if (currentStatus !== targetStatus) {
+                            wrapper.classList.remove('disconnected', 'status-normal', 'status-warning', 'status-danger');
+                            wrapper.classList.add(targetStatus);
+                            currentStatus = targetStatus;
+                        }
+                    } else {
+                        updateStateToDisconnected("OFF");
+                    }
+                } catch (e) { console.error("Data error:", e); }
+            };
+
+            socket.onclose = () => { updateStateToDisconnected("LOST"); setTimeout(connect, 5000); };
+            socket.onerror = () => { socket.close(); };
+        }
+
+        function updateStateToDisconnected(text) {
+            if (currentStatus !== 'disconnected') {
+                wrapper.className = 'container disconnected';
+                bpmEl.innerText = text;
+                maxEl.innerText = '--';
+                currentStatus = 'disconnected';
+                currentHR = '--';
+                currentMax = '--';
+            }
+        }
+
+        setInterval(() => {
+            if (currentStatus !== 'disconnected' && (Date.now() - lastMessageTime > 4000)) {
+                updateStateToDisconnected("WAIT");
+            }
+        }, 1000);
+
+        connect();
+    </script>
+</body>
+</html>

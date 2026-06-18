@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { background: transparent; overflow: hidden; margin: 0; padding: 20px; }
+        
+        /* 医疗网格背景 */
+        .container { 
+            display: flex; align-items: baseline; 
+            font-family: 'Arial', 'Helvetica Neue', sans-serif;
+            background: #000;
+            border: 1px solid #113311;
+            padding: 8px 20px;
+            /* 极其微弱的医院设备网格线 */
+            background-image: linear-gradient(rgba(0, 50, 0, 0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(0, 50, 0, 0.1) 1px, transparent 1px);
+            background-size: 10px 10px;
+            transition: all 0.3s ease;
+        }
+
+        /* 医疗仪器的起搏指示灯闪烁 */
+        @keyframes medical-dot { 
+            0%, 100% { opacity: 0.3; transform: scale(1); } 
+            20% { opacity: 1; transform: scale(1.3); } 
+        }
+
+        /* 模拟左上角专业标签 */
+        .heart { margin-right: 15px; font-size: 24px; font-weight: bold; position: relative; bottom: 10px; }
+        .heart::after { content: ' ECG'; font-size: 12px; opacity: 0.7; }
+        
+        /* 液晶数字感 */
+        #bpm { font-size: 75px; min-width: 100px; text-align: center; font-weight: bold; font-family: monospace; }
+        
+        .max-info { display: flex; flex-direction: column; align-items: flex-start; margin-left: 25px; font-size: 11px; }
+        .max-label { opacity: 0.6; font-weight: bold; }
+        .max-label::before { content: 'LIMIT: 120 / '; }
+        #maxBpm { font-size: 18px; font-weight: bold; margin-top: 2px; }
+
+        /* 右侧隐藏的致命警报灯 */
+        .alarm-tag { display: none; margin-left: 20px; font-size: 18px; font-weight: bold; background: #ff0000; color: #fff; padding: 2px 8px; animation: blink 0.5s infinite step-start; }
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+
+        /* 严格的医学指标调色：生命绿 -> 警戒黄 -> 危险红 */
+        .status-normal { color: #00ff66; }
+        .status-normal .heart { animation: medical-dot 0.8s infinite ease-in-out; }
+        .status-normal #maxBpm { color: #00ff66; }
+
+        .status-warning { color: #ffcc00; }
+        .status-warning .heart { animation: medical-dot 0.4s infinite ease-in-out; }
+        .status-warning #maxBpm { color: #ffcc00; }
+
+        .status-danger { color: #ff0033; }
+        .status-danger .heart { animation: medical-dot 0.18s infinite ease-in-out; }
+        .status-danger #maxBpm { color: #ff0033; }
+        .status-danger .alarm-tag { display: inline-block; } /* 触发警报显示 */
+
+        .disconnected { color: #444 !important; }
+        .disconnected .heart { animation: none !important; }
+    </style>
+</head>
+<body>
+    <div id="wrapper" class="container disconnected">
+        <span id="heartIcon" class="heart">●</span>
+        <span id="bpm">--</span>
+        <div class="max-info">
+            <span class="max-label">PEAK</span>
+            <span id="maxBpm">--</span>
+        </div>
+        <span class="alarm-tag">ALARM</span>
+    </div>
+
+    <script>
+        let socket = null; let lastMessageTime = Date.now();
+        let currentStatus = 'disconnected'; let currentHR = '--'; let currentMax = '--';
+        const bpmEl = document.getElementById('bpm'); const maxEl = document.getElementById('maxBpm'); const wrapper = document.getElementById('wrapper');
+
+        function connect() {
+            if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+            socket = new WebSocket('ws://127.0.0.1:8001');
+            socket.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data); lastMessageTime = Date.now();
+                    if (data.connected && data.heart_rate > 0) {
+                        const hr = data.heart_rate; const max = data.max_heart_rate || '--';
+                        if (hr !== currentHR) { bpmEl.innerText = hr; currentHR = hr; }
+                        if (max !== currentMax) { maxEl.innerText = max; currentMax = max; }
+                        let targetStatus = 'status-normal';
+                        if (hr >= 120) targetStatus = 'status-danger';
+                        else if (hr >= 100) targetStatus = 'status-warning';
+                        if (currentStatus !== targetStatus) {
+                            wrapper.classList.remove('disconnected', 'status-normal', 'status-warning', 'status-danger');
+                            wrapper.classList.add(targetStatus); currentStatus = targetStatus;
+                        }
+                    } else { updateStateToDisconnected("STBY"); }
+                } catch (e) { console.error("Data error:", e); }
+            };
+            socket.onclose = () => { updateStateToDisconnected("DISC"); setTimeout(connect, 5000); };
+            socket.onerror = () => { socket.close(); };
+        }
+        function updateStateToDisconnected(text) {
+            if (currentStatus !== 'disconnected') {
+                wrapper.className = 'container disconnected'; bpmEl.innerText = text; maxEl.innerText = '--';
+                currentStatus = 'disconnected'; currentHR = '--'; currentMax = '--';
+            }
+        }
+        setInterval(() => { if (currentStatus !== 'disconnected' && (Date.now() - lastMessageTime > 4000)) updateStateToDisconnected("CHECK"); }, 1000);
+        connect();
+    </script>
+</body>
+</html>

@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { background: transparent; overflow: hidden; margin: 0; padding: 20px; }
+        
+        /* 医疗监护仪黑色面板 */
+        .container { 
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            background: rgba(8, 12, 10, 0.9);
+            border: 1px solid #1a2e22;
+            padding: 10px 20px;
+            border-radius: 6px;
+            box-shadow: inset 0 0 20px rgba(0, 255, 100, 0.05), 0 8px 24px rgba(0,0,0,0.4);
+            font-family: 'monospace', 'Courier New', sans-serif;
+            width: 320px;
+            height: 70px;
+            box-sizing: border-box;
+            transition: all 0.3s ease;
+        }
+        
+        /* 左侧模拟动态心电图区域 */
+        .ecg-screen {
+            position: relative;
+            width: 140px;
+            height: 100%;
+            overflow: hidden;
+            margin-right: 15px;
+            opacity: 0.8;
+        }
+
+        /* 纯CSS绘制的心电图网格背景 */
+        .ecg-grid {
+            position: absolute; width: 100%; height: 100%;
+            background-image: linear-gradient(rgba(0,255,100,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(0,255,100,0.04) 1px, transparent 1px);
+            background-size: 8px 8px;
+        }
+
+        /* 核心心电线条：利用 svg 滤镜与 mask 制造流动感 */
+        .ecg-line {
+            position: absolute; top: 0; left: 0; width: 200%; height: 100%;
+            stroke: var(--theme-color, #00ff66);
+            stroke-width: 2;
+            fill: none;
+            will-change: transform;
+            animation: ecg-sweep 2s infinite linear;
+        }
+
+        @keyframes ecg-sweep {
+            0% { transform: translateX(0); }
+            100% { transform: translateX(-50%); }
+        }
+        
+        /* 右侧数据面板 */
+        .data-panel { display: flex; flex-direction: column; flex-grow: 1; }
+        .row-top { display: flex; justify-content: space-between; align-items: flex-end; line-height: 1; }
+        
+        /* 心率大字 */
+        #bpm { 
+            font-size: 42px; font-weight: bold; 
+            color: var(--theme-color, #00ff66); 
+            text-shadow: 0 0 8px var(--theme-glow, rgba(0,255,100,0.4));
+        }
+        
+        /* 右下角最高值小字 */
+        .max-info { display: flex; justify-content: space-between; font-size: 11px; color: #4e6154; margin-top: 4px; border-top: 1px dashed #1a2e22; padding-top: 4px;}
+        #maxBpm { font-weight: bold; color: #a3bda9; }
+        
+        /* 状态变色（安全绿、警告黄、极限红） */
+        .status-normal { --theme-color: #00ff66; --theme-glow: rgba(0,255,100,0.4); }
+        .status-normal .ecg-line { animation-duration: 2s; }
+
+        .status-warning { --theme-color: #ffcc00; --theme-glow: rgba(255,204,0,0.4); border-color: #3d3300; }
+        .status-warning .ecg-line { animation-duration: 1.2s; stroke-width: 2.5; }
+        
+        .status-danger { --theme-color: #ff3333; --theme-glow: rgba(255,51,51,0.6); border-color: #4a0c0c; background: rgba(20, 5, 5, 0.9); }
+        .status-danger .ecg-line { animation-duration: 0.6s; stroke-width: 3; }
+
+        /* 断开连接 */
+        .disconnected { border-color: #222 !important; background: #0c0d0e !important; }
+        .disconnected .ecg-line { animation: none !important; stroke: #333 !important; y: 25; /* 变成一条毫无波动的死线 */ }
+        .disconnected #bpm { color: #444; text-shadow: none; font-size: 32px; }
+        .disconnected .max-info { color: #222; border-top-color: #222; }
+        .disconnected #maxBpm { color: #333; }
+    </style>
+</head>
+<body>
+    <div id="wrapper" class="container disconnected">
+        <div class="ecg-screen">
+            <div class="ecg-grid"></div>
+            <svg class="ecg-line" viewBox="0 0 200 50" preserveAspectRatio="none">
+                <path d="M0,25 L30,25 L35,15 L40,35 L45,25 L70,25 L73,5 L78,45 L83,25 L100,25 M100,25 L130,25 L135,15 L140,35 L145,25 L170,25 L173,5 L178,45 L183,25 L200,25" />
+            </svg>
+        </div>
+        <div class="data-panel">
+            <div class="row-top">
+                <span style="font-size: 10px; color: var(--theme-color); font-weight: bold;">HR/BPM</span>
+                <span id="bpm">--</span>
+            </div>
+            <div class="max-info">
+                <span>LIMIT_PEAK</span>
+                <span id="maxBpm">--</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let socket = null;
+        let lastMessageTime = Date.now();
+        let currentStatus = 'disconnected'; 
+        let currentHR = '--';
+        let currentMax = '--';
+
+        const bpmEl = document.getElementById('bpm');
+        const maxEl = document.getElementById('maxBpm');
+        const wrapper = document.getElementById('wrapper');
+
+        function connect() {
+            if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+            socket = new WebSocket('ws://127.0.0.1:8001');
+
+            socket.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    lastMessageTime = Date.now();
+
+                    if (data.connected && data.heart_rate > 0) {
+                        const hr = data.heart_rate;
+                        const max = data.max_heart_rate || '--';
+
+                        if (hr !== currentHR) {
+                            bpmEl.innerText = hr;
+                            currentHR = hr;
+                        }
+                        if (max !== currentMax) {
+                            maxEl.innerText = max;
+                            currentMax = max;
+                        }
+
+                        let targetStatus = 'status-normal';
+                        if (hr >= 120) targetStatus = 'status-danger';
+                        else if (hr >= 100) targetStatus = 'status-warning';
+
+                        if (currentStatus !== targetStatus) {
+                            wrapper.classList.remove('disconnected', 'status-normal', 'status-warning', 'status-danger');
+                            wrapper.classList.add(targetStatus);
+                            currentStatus = targetStatus;
+                        }
+                    } else {
+                        updateStateToDisconnected("OFF");
+                    }
+                } catch (e) { console.error("Data error:", e); }
+            };
+
+            socket.onclose = () => { updateStateToDisconnected("LOST"); setTimeout(connect, 5000); };
+            socket.onerror = () => { socket.close(); };
+        }
+
+        function updateStateToDisconnected(text) {
+            if (currentStatus !== 'disconnected') {
+                wrapper.className = 'container disconnected';
+                bpmEl.innerText = text;
+                maxEl.innerText = '--';
+                currentStatus = 'disconnected';
+                currentHR = '--';
+                currentMax = '--';
+            }
+        }
+
+        setInterval(() => {
+            if (currentStatus !== 'disconnected' && (Date.now() - lastMessageTime > 4000)) {
+                updateStateToDisconnected("WAIT");
+            }
+        }, 1000);
+
+        connect();
+    </script>
+</body>
+</html>

@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>心率 - 进度填充面板</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background: transparent;padding:30px;}
+.progress-box{
+  width: 300px;
+  height: 85px;
+  background: #1a1a1a;
+  border-radius: 4px;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  padding: 0 25px;
+}
+/* 动态填充底色 */
+.progress-fill{
+  position:absolute;
+  left:0;top:0;height:100%;width:0%;
+  background: linear-gradient(90deg, #22c55e, #eab308, #ef4444);
+  transition: width 0.4s ease;
+  opacity: 0.25;
+}
+#bpm{
+  font-size: 48px;
+  color:#fff;
+  position:relative;
+  z-index:2;
+  font-family:monospace;
+  flex:1;
+}
+.progress-text{color:#aaa;font-size:13px;position:relative;z-index:2;}
+.disconnected .progress-fill{width:0 !important;}
+.disconnected #bpm{color:#555;}
+</style>
+</head>
+<body>
+<div id="wrap" class="progress-box disconnected">
+  <div class="progress-fill" id="fill"></div>
+  <div id="bpm">--</div>
+  <div class="progress-text">峰值：<span id="maxBpm">--</span></div>
+</div>
+
+<script>
+let socket, lastTime = Date.now(), status = 'disconnected';
+const bpm = document.getElementById('bpm');
+const maxBpm = document.getElementById('maxBpm');
+const wrap = document.getElementById('wrap');
+const fill = document.getElementById('fill');
+const maxLimit = 180; // 心率最大阈值
+
+function connect(){
+  if(socket && [0,1].includes(socket.readyState)) return;
+  socket = new WebSocket('ws://127.0.0.1:8001');
+  socket.onmessage = e => {
+    try{
+      const d = JSON.parse(e.data);
+      lastTime = Date.now();
+      if(d.connected && d.heart_rate > 0){
+        const hr = d.heart_rate;
+        bpm.innerText = hr;
+        maxBpm.innerText = d.max_heart_rate || '--';
+        // 动态计算填充宽度
+        let percent = (hr / maxLimit) * 100;
+        if(percent > 100) percent = 100;
+        fill.style.width = percent + '%';
+
+        let st = 'status-normal';
+        if(hr >= 120) st = 'status-danger';
+        else if(hr >= 100) st = 'status-warning';
+        wrap.className = 'progress-box ' + st;
+        status = st;
+      }else{
+        wrap.className = 'progress-box disconnected';
+        bpm.innerText = '离线';
+        maxBpm.innerText = '--';
+        fill.style.width = '0%';
+        status = 'disconnected';
+      }
+    }catch(err){}
+  };
+  socket.onclose = () => {
+    wrap.className = 'progress-box disconnected';
+    bpm.innerText = '断连';
+    fill.style.width = '0%';
+    setTimeout(connect, 5000);
+  };
+}
+setInterval(()=>{
+  if(status !== 'disconnected' && Date.now() - lastTime > 4000){
+    wrap.className = 'progress-box disconnected';
+    bpm.innerText = '超时';
+    fill.style.width = '0%';
+    status = 'disconnected';
+  }
+},1000);
+connect();
+</script>
+</body>
+</html>

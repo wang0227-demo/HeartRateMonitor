@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { background: transparent; overflow: hidden; margin: 0; padding: 20px; }
+        
+        /* 生化实验终端框架 */
+        .container { 
+            display: flex;
+            flex-direction: column;
+            width: 170px;
+            background: rgba(6, 10, 8, 0.85);
+            border: 1px solid var(--ecg-color, #22aa55);
+            padding: 8px 14px;
+            font-family: 'Impact', 'Arial Black', sans-serif;
+            position: relative;
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.8);
+        }
+
+        .hud-row { display: flex; justify-content: space-between; align-items: center; }
+        
+        /* 像素心脏 */
+        .bio-heart {
+            font-size: 26px; color: var(--ecg-color, #22aa55);
+            line-height: 1; transition: transform 0.2s;
+        }
+        
+        /* 核心心率 */
+        #bpm { 
+            font-size: 42px; font-weight: 900; color: #ffffff; line-height: 1;
+            text-shadow: 0 0 6px var(--ecg-color, #22aa55);
+        }
+        
+        /* 极限信息 */
+        .bio-meta { display: flex; flex-direction: column; align-items: flex-end; line-height: 1; }
+        .bio-lbl { font-size: 7px; color: rgba(255,255,255,0.3); font-family: Arial; font-weight: bold; }
+        #maxBpm { font-size: 16px; color: var(--ecg-color, #22aa55); font-weight: bold; margin-top: 2px; }
+        
+        /* 底层危险模拟心电图波动线 */
+        .ecg-bar {
+            width: 100%; height: 3px; background: var(--ecg-color, #22aa55); margin-top: 8px;
+            opacity: 0.8; box-shadow: 0 0 4px var(--ecg-color, #22aa55);
+        }
+
+        /* 极度濒死剧烈狂摆 */
+        @keyframes bio-crisis {
+            0%, 100% { transform: translateY(0) scale(1); filter: brightness(1); }
+            50% { transform: translateY(-2px) scale(1.05); filter: brightness(1.3); }
+        }
+
+        /* 状态树：Fine -> Caution -> Danger */
+        .status-normal { --ecg-color: #22aa55; }
+        
+        .status-warning { --ecg-color: #d4a017; }
+        .status-warning #bpm { color: #d4a017; }
+
+        .status-danger { --ecg-color: #cc0000; animation: bio-crisis 0.2s infinite ease-in-out; }
+        .status-danger #bpm { color: #ff3333; }
+        .status-danger .ecg-bar { animation: bio-crisis 0.1s infinite; }
+
+        /* 系统停机（Flatline 心跳停止一条死线） */
+        .disconnected { border-color: #222 !important; background: #080808 !important; animation: none !important; }
+        .disconnected #bpm { color: #222; text-shadow: none !important; font-size: 26px; }
+        .disconnected .bio-heart { color: #222; }
+        .disconnected #maxBpm { color: #222; }
+        .disconnected .ecg-bar { background: #1a1a1a !important; height: 1px; box-shadow: none !important; }
+        .disconnected .bio-lbl { color: #151515; }
+    </style>
+</head>
+<body>
+    <div id="wrapper" class="container disconnected">
+        <div class="hud-row">
+            <span class="bio-heart">♥</span>
+            <span id="bpm">--</span>
+            <div class="bio-meta">
+                <span class="bio-lbl">PEAK_VIT</span>
+                <span id="maxBpm">--</span>
+            </div>
+        </div>
+        <div class="ecg-bar"></div>
+    </div>
+
+    <script>
+        let socket = null;
+        let lastMessageTime = Date.now();
+        let currentStatus = 'disconnected'; 
+        let currentHR = '--';
+        let currentMax = '--';
+
+        const bpmEl = document.getElementById('bpm');
+        const maxEl = document.getElementById('maxBpm');
+        const wrapper = document.getElementById('wrapper');
+
+        function connect() {
+            if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+            socket = new WebSocket('ws://127.0.0.1:8001');
+
+            socket.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    lastMessageTime = Date.now();
+
+                    if (data.connected && data.heart_rate > 0) {
+                        const hr = data.heart_rate;
+                        const max = data.max_heart_rate || '--';
+
+                        if (hr !== currentHR) {
+                            bpmEl.innerText = hr;
+                            currentHR = hr;
+                        }
+                        if (max !== currentMax) {
+                            maxEl.innerText = max;
+                            currentMax = max;
+                        }
+
+                        let targetStatus = 'status-normal';
+                        if (hr >= 120) targetStatus = 'status-danger';
+                        else if (hr >= 100) targetStatus = 'status-warning';
+
+                        if (currentStatus !== targetStatus) {
+                            wrapper.classList.remove('disconnected', 'status-normal', 'status-warning', 'status-danger');
+                            wrapper.classList.add(targetStatus);
+                            currentStatus = targetStatus;
+                        }
+                    } else {
+                        updateStateToDisconnected("OFF");
+                    }
+                } catch (e) { console.error("Data error:", e); }
+            };
+
+            socket.onclose = () => { updateStateToDisconnected("LOST"); setTimeout(connect, 5000); };
+            socket.onerror = () => { socket.close(); };
+        }
+
+        function updateStateToDisconnected(text) {
+            if (currentStatus !== 'disconnected') {
+                wrapper.className = 'container disconnected';
+                bpmEl.innerText = text;
+                maxEl.innerText = '--';
+                currentStatus = 'disconnected';
+                currentHR = '--';
+                currentMax = '--';
+            }
+        }
+
+        setInterval(() => {
+            if (currentStatus !== 'disconnected' && (Date.now() - lastMessageTime > 4000)) {
+                updateStateToDisconnected("WAIT");
+            }
+        }, 1000);
+
+        connect();
+    </script>
+</body>
+</html>

@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+body{background: transparent;padding:20px;margin:0}
+.clip-neon{
+  width:300px;height:90px;clip-path:polygon(0 0,94% 0,100% 50%,94% 100%,0 100%,6% 50%);
+  background:#0b0b18;padding:0 35px;display:flex;align-items:center;position:relative;box-sizing: border-box;
+}
+.clip-neon::before{
+  content:"";position:absolute;inset:-3px;background:linear-gradient(90deg,#f08,#0cf);
+  z-index:-1;filter:blur(4px);opacity:0.7;clip-path:inherit;
+}
+#bpm{font-size:48px;font-family:monospace;flex:1}
+.info-text{color:#aaa;font-size:13px;text-align:center}
+.status-normal #bpm{color:#0cf;filter:drop-shadow(0 0 5px #0cf)}
+.status-warning #bpm{color:#fd0;filter:drop-shadow(0 0 5px #fd0)}
+.status-danger #bpm{color:#f44;filter:drop-shadow(0 0 8px #f44);animation:scaleAnim 0.7s infinite}
+.disconnected #bpm{color:#444;filter:none}
+@keyframes scaleAnim{0%,100%{transform:scale(1)}50%{transform:scale(1.04)}}
+</style>
+</head>
+<body>
+<div id="wrap" class="clip-neon disconnected">
+  <span id="bpm">--</span>
+  <div class="info-text">MAX<br><span id="maxBpm">--</span></div>
+</div>
+<script>
+let socket,lastTime=Date.now(),status='disconnected';
+const bpm=document.getElementById('bpm'),maxBpm=document.getElementById('maxBpm'),wrap=document.getElementById('wrap');
+function connect(){
+  if(socket&&[0,1].includes(socket.readyState))return;
+  socket=new WebSocket('ws://127.0.0.1:8001');
+  socket.onmessage=e=>{
+    try{
+      const d=JSON.parse(e.data);lastTime=Date.now();
+      if(d.connected&&d.heart_rate>0){
+        bpm.innerText=d.heart_rate;maxBpm.innerText=d.max_heart_rate||'--';
+        let st='status-normal';
+        if(d.heart_rate>=120)st='status-danger';
+        else if(d.heart_rate>=100)st='status-warning';
+        wrap.className='clip-neon '+st;status=st;
+      }else{updateDisconnect()}
+    }catch(err){}
+  }
+  socket.onclose=()=>{updateDisconnect();setTimeout(connect,5000)}
+}
+function updateDisconnect(){
+  if(status==='disconnected')return;
+  wrap.className='clip-neon disconnected';bpm.innerText='--';maxBpm.innerText='--';status='disconnected';
+}
+setInterval(()=>{if(status!=='disconnected'&&Date.now()-lastTime>4000)updateDisconnect()},1000);
+connect();
+</script>
+</body>
+</html>

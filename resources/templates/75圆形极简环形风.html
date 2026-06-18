@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { background: transparent; overflow: hidden; margin: 0; padding: 20px; }
+        
+        /* 智能手环圆形底座 */
+        .container { 
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            background: #000000;
+            border: 3px solid var(--ring-color, #30d158); /* 呼吸绿 */
+            position: relative;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        
+        /* 核心心率大字 */
+        #bpm { 
+            font-size: 38px; 
+            font-weight: 700; 
+            color: #ffffff; 
+            line-height: 1;
+            margin-top: 4px;
+            letter-spacing: -1px;
+        }
+        
+        /* 紧凑贴合在数字上下的小标签 */
+        .ring-label {
+            font-size: 9px;
+            color: var(--ring-color, #30d158);
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .max-info { 
+            margin-top: 4px;
+            font-size: 11px;
+            color: #8e8e93;
+            font-weight: 500;
+        }
+        #maxBpm { font-weight: bold; color: #ffffff; opacity: 0.9; }
+        
+        /* 高端环状发光收缩动画 */
+        @keyframes ring-glow {
+            0% { box-shadow: 0 0 0 0px var(--glow-color); opacity: 0.9; }
+            100% { box-shadow: 0 0 0 12px var(--glow-color); opacity: 0; }
+        }
+
+        /* 状态控制 */
+        .status-normal { --ring-color: #30d158; }
+        
+        .status-warning { --ring-color: #ff9f0a; }
+        .status-warning #bpm { color: #ff9f0a; }
+        
+        .status-danger { --ring-color: #ff453a; }
+        .status-danger::after {
+            content: ''; position: absolute; top: -3px; left: -3px; right: -3px; bottom: -3px;
+            border-radius: 50%; border: 3px solid #ff453a;
+            --glow-color: rgba(255, 69, 58, 0.4);
+            animation: ring-glow 0.6s infinite linear;
+        }
+        .status-danger #bpm { color: #ff453a; font-weight: 800; }
+
+        /* 断开连接 */
+        .disconnected { border-color: #3a3a3c !important; background: #1c1c1e !important; box-shadow: none !important; }
+        .disconnected .ring-label { color: #545456; }
+        .disconnected #bpm { color: #48484a; font-size: 26px; }
+        .disconnected .max-info { color: #3a3a3c; }
+        .disconnected #maxBpm { color: #3a3a3c; }
+    </style>
+</head>
+<body>
+    <div id="wrapper" class="container disconnected">
+        <span class="ring-label">BPM</span>
+        <span id="bpm">--</span>
+        <div class="max-info">
+            <span>M: </span><span id="maxBpm">--</span>
+        </div>
+    </div>
+
+    <script>
+        let socket = null;
+        let lastMessageTime = Date.now();
+        let currentStatus = 'disconnected'; 
+        let currentHR = '--';
+        let currentMax = '--';
+
+        const bpmEl = document.getElementById('bpm');
+        const maxEl = document.getElementById('maxBpm');
+        const wrapper = document.getElementById('wrapper');
+
+        function connect() {
+            if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+            socket = new WebSocket('ws://127.0.0.1:8001');
+
+            socket.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    lastMessageTime = Date.now();
+
+                    if (data.connected && data.heart_rate > 0) {
+                        const hr = data.heart_rate;
+                        const max = data.max_heart_rate || '--';
+
+                        if (hr !== currentHR) {
+                            bpmEl.innerText = hr;
+                            currentHR = hr;
+                        }
+                        if (max !== currentMax) {
+                            maxEl.innerText = max;
+                            currentMax = max;
+                        }
+
+                        let targetStatus = 'status-normal';
+                        if (hr >= 120) targetStatus = 'status-danger';
+                        else if (hr >= 100) targetStatus = 'status-warning';
+
+                        if (currentStatus !== targetStatus) {
+                            wrapper.classList.remove('disconnected', 'status-normal', 'status-warning', 'status-danger');
+                            wrapper.classList.add(targetStatus);
+                            currentStatus = targetStatus;
+                        }
+                    } else {
+                        updateStateToDisconnected("OFF");
+                    }
+                } catch (e) { console.error("Data error:", e); }
+            };
+
+            socket.onclose = () => { updateStateToDisconnected("LOST"); setTimeout(connect, 5000); };
+            socket.onerror = () => { socket.close(); };
+        }
+
+        function updateStateToDisconnected(text) {
+            if (currentStatus !== 'disconnected') {
+                wrapper.className = 'container disconnected';
+                bpmEl.innerText = text;
+                maxEl.innerText = '--';
+                currentStatus = 'disconnected';
+                currentHR = '--';
+                currentMax = '--';
+            }
+        }
+
+        setInterval(() => {
+            if (currentStatus !== 'disconnected' && (Date.now() - lastMessageTime > 4000)) {
+                updateStateToDisconnected("WAIT");
+            }
+        }, 1000);
+
+        connect();
+    </script>
+</body>
+</html>

@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>心率-叠加层组件</title>
+<style>
+body { overflow: hidden; margin: 0; padding: 20px; background: transparent; }
+.hr-overlay {
+  width: 85px;
+  height: 140px;
+  background: rgba(0,0,0,0.4);
+  color: #fff;
+  padding: 15px;
+  box-sizing: border-box;
+  border-radius: 8px;
+  font-family: monospace;
+}
+#bpm { font-size: 48px; margin: 12px 0; }
+.txt { font-size: 12px; opacity: 0.8; }
+/* 状态 */
+.status-normal #bpm { color: #7bed9f; }
+.status-warning #bpm { color: #ffd32a; }
+.status-danger #bpm { color: #ff4757; }
+.disconnected { background: rgba(0,0,0,0.2); }
+.disconnected #bpm { color: #666; }
+</style>
+</head>
+<body>
+<div id="wrap" class="hr-overlay disconnected">
+  <div class="txt">心率监测</div>
+  <div id="bpm">--</div>
+  <div class="txt">峰值: <span id="maxBpm">--</span></div>
+</div>
+
+<script>
+let socket, lastTime = Date.now(), status = 'disconnected';
+const bpm = document.getElementById('bpm');
+const maxBpm = document.getElementById('maxBpm');
+const wrap = document.getElementById('wrap');
+
+function conn() {
+  if(socket && [0,1].includes(socket.readyState)) return;
+  socket = new WebSocket('ws://127.0.0.1:8001');
+  socket.onmessage = e => {
+    try{
+      let d = JSON.parse(e.data);
+      lastTime = Date.now();
+      if(d.connected && d.heart_rate > 0){
+        bpm.innerText = d.heart_rate;
+        maxBpm.innerText = d.max_heart_rate || '--';
+        let st = 'status-normal';
+        if(d.heart_rate >= 120) st = 'status-danger';
+        else if(d.heart_rate >= 100) st = 'status-warning';
+        wrap.className = 'hr-overlay ' + st;
+        status = st;
+      }else{
+        wrap.className = 'hr-overlay disconnected';
+        bpm.innerText = 'OFF';
+        maxBpm.innerText = '--';
+        status = 'disconnected';
+      }
+    }catch(err){}
+  };
+  socket.onclose = () => {
+    wrap.className = 'hr-overlay disconnected';
+    bpm.innerText = 'LOSS';
+    setTimeout(conn, 5000);
+  };
+}
+setInterval(()=>{
+  if(status !== 'disconnected' && Date.now() - lastTime > 4000){
+    wrap.className = 'hr-overlay disconnected';
+    bpm.innerText = 'WAIT';
+    status = 'disconnected';
+  }
+},1000);
+conn();
+</script>
+</body>
+</html>

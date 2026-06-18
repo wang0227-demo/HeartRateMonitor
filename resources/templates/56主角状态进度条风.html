@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { background: transparent; overflow: hidden; margin: 0; padding: 20px; }
+        
+        /* 横向长条状舞台 */
+        .container { 
+            display: flex;
+            flex-direction: column;
+            width: 260px;
+            background: rgba(15, 17, 23, 0.85);
+            border: 1px solid rgba(255,255,255,0.05);
+            padding: 10px 16px;
+            border-radius: 4px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.4);
+            font-family: 'Segoe UI', -apple-system, sans-serif;
+        }
+        
+        /* 上层数据对齐行 */
+        .data-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            margin-bottom: 6px;
+        }
+
+        .label-group { display: flex; align-items: center; }
+        .title { font-size: 10px; color: #656e85; font-weight: bold; letter-spacing: 1px; margin-right: 8px;}
+        #bpm { font-size: 28px; font-weight: 800; color: var(--bar-color, #00e5ff); line-height: 1; }
+        
+        .max-info { font-size: 11px; color: #656e85; }
+        #maxBpm { font-weight: bold; color: #ffffff; opacity: 0.8; margin-left: 4px;}
+        
+        /* 下层：核心长进度条组件 */
+        .bar-bg {
+            width: 100%;
+            height: 6px;
+            background: #202430;
+            border-radius: 3px;
+            overflow: hidden;
+            position: relative;
+        }
+        .bar-fill {
+            height: 100%;
+            width: 100%; /* 这里通过骨骼动画让其产生横向流动感 */
+            background: linear-gradient(90deg, var(--bar-color, #00e5ff), #ffffff, var(--bar-color, #00e5ff));
+            background-size: 200% 100%;
+            border-radius: 3px;
+            animation: bar-flow 2s infinite linear;
+            transition: all 0.4s ease;
+        }
+        
+        @keyframes bar-flow {
+            0% { background-position: 0% 0%; }
+            100% { background-position: -200% 0%; }
+        }
+
+        /* 状态映射 */
+        .status-normal { --bar-color: #00e5ff; }
+        
+        .status-warning { --bar-color: #ffb300; }
+        .status-warning .bar-fill { animation-duration: 1s; }
+        
+        .status-danger { --bar-color: #ff2a55; }
+        .status-danger .bar-fill { animation-duration: 0.4s; }
+        .status-danger .bar-bg { animation: pulse 0.4s infinite alternate; }
+        @keyframes pulse { 0% { opacity: 0.6; } 100% { opacity: 1; } }
+
+        /* 断开连接（能量归零灰化） */
+        .disconnected { background: rgba(20,20,25,0.6) !important; border-color: transparent !important; box-shadow: none !important; }
+        .disconnected #bpm { color: #444a59; font-size: 20px; }
+        .disconnected #maxBpm { color: #444a59; }
+        .disconnected .title { color: #333845; }
+        .disconnected .bar-fill { width: 0% !important; animation: none !important; }
+    </style>
+</head>
+<body>
+    <div id="wrapper" class="container disconnected">
+        <div class="data-row">
+            <div class="label-group">
+                <span class="title">VITALS / SYSTEM</span>
+                <span id="bpm">--</span>
+            </div>
+            <div class="max-info">
+                <span>PEAK</span><span id="maxBpm">--</span>
+            </div>
+        </div>
+        <div class="bar-bg">
+            <div class="bar-fill"></div>
+        </div>
+    </div>
+
+    <script>
+        let socket = null;
+        let lastMessageTime = Date.now();
+        let currentStatus = 'disconnected'; 
+        let currentHR = '--';
+        let currentMax = '--';
+
+        const bpmEl = document.getElementById('bpm');
+        const maxEl = document.getElementById('maxBpm');
+        const wrapper = document.getElementById('wrapper');
+
+        function connect() {
+            if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+            socket = new WebSocket('ws://127.0.0.1:8001');
+
+            socket.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    lastMessageTime = Date.now();
+
+                    if (data.connected && data.heart_rate > 0) {
+                        const hr = data.heart_rate;
+                        const max = data.max_heart_rate || '--';
+
+                        if (hr !== currentHR) {
+                            bpmEl.innerText = hr;
+                            currentHR = hr;
+                        }
+                        if (max !== currentMax) {
+                            maxEl.innerText = max;
+                            currentMax = max;
+                        }
+
+                        let targetStatus = 'status-normal';
+                        if (hr >= 120) targetStatus = 'status-danger';
+                        else if (hr >= 100) targetStatus = 'status-warning';
+
+                        if (currentStatus !== targetStatus) {
+                            wrapper.classList.remove('disconnected', 'status-normal', 'status-warning', 'status-danger');
+                            wrapper.classList.add(targetStatus);
+                            currentStatus = targetStatus;
+                        }
+                    } else {
+                        updateStateToDisconnected("OFF");
+                    }
+                } catch (e) { console.error("Data error:", e); }
+            };
+
+            socket.onclose = () => { updateStateToDisconnected("LOST"); setTimeout(connect, 5000); };
+            socket.onerror = () => { socket.close(); };
+        }
+
+        function updateStateToDisconnected(text) {
+            if (currentStatus !== 'disconnected') {
+                wrapper.className = 'container disconnected';
+                bpmEl.innerText = text;
+                maxEl.innerText = '--';
+                currentStatus = 'disconnected';
+                currentHR = '--';
+                currentMax = '--';
+            }
+        }
+
+        setInterval(() => {
+            if (currentStatus !== 'disconnected' && (Date.now() - lastMessageTime > 4000)) {
+                updateStateToDisconnected("WAIT");
+            }
+        }, 1000);
+
+        connect();
+    </script>
+</body>
+</html>

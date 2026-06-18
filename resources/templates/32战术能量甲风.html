@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { background: transparent; overflow: hidden; margin: 0; padding: 20px; }
+        
+        /* 重装战术装甲外框 */
+        .container { 
+            display: flex;
+            flex-direction: column;
+            width: 170px;
+            background: rgba(12, 14, 18, 0.9);
+            border: 2px solid #22252e;
+            padding: 10px 14px;
+            position: relative;
+            box-sizing: border-box;
+            font-family: 'Impact', 'Arial Black', sans-serif;
+        }
+
+        /* 纯CSS绘制装甲四角的红黑防御块结构 */
+        .container::before {
+            content: ''; position: absolute; top: -4px; left: -4px; right: -4px; bottom: -4px;
+            border: 4px solid var(--shield-red, #ff0044);
+            clip-path: polygon(0 0, 20px 0, 0 20px, 100% 0, 100% 20px, calc(100% - 20px) 0, 100% 100%, calc(100% - 20px) 100%, 100% calc(100% - 20px), 0 100%, 0 calc(100% - 20px), 20px 100%);
+            pointer-events: none;
+            transition: border-color 0.3s;
+        }
+        
+        /* 数据行布局 */
+        .data-row { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 4px; }
+        
+        #bpm { 
+            font-size: 42px; font-weight: 900; color: #ffffff; line-height: 1;
+            letter-spacing: -0.5px;
+        }
+        
+        /* 侧边堆叠的护盾极限参数 */
+        .shield-meta { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.1; }
+        .meta-lbl { font-size: 8px; color: #484f5e; font-weight: bold; font-family: Arial, sans-serif;}
+        #maxBpm { font-size: 16px; color: var(--shield-red, #ff0044); font-weight: bold; }
+        
+        /* 下方断裂式电能能量槽 */
+        .shield-bar {
+            width: 100%; height: 5px; background: #181b22;
+            position: relative; overflow: hidden;
+            clip-path: polygon(0 0, 100% 0, 95% 100%, 0 100%);
+        }
+        .shield-fill {
+            height: 100%; width: 70%; background: var(--shield-red, #ff0044);
+            transition: all 0.4s ease;
+        }
+
+        /* 警报高频闪烁动效 */
+        @keyframes shield-flash {
+            0%, 100% { opacity: 0.3; background: #130206; }
+            50% { opacity: 1; background: #2b040e; }
+        }
+
+        /* 状态设置 */
+        .status-normal { --shield-red: #ff0044; }
+        
+        .status-warning { --shield-red: #ff7700; }
+        .status-warning #bpm { color: #ff7700; }
+        .status-warning .shield-fill { width: 85%; }
+
+        .status-danger { --shield-red: #ff0000; animation: shield-flash 0.2s infinite ease-in-out; }
+        .status-danger #bpm { color: #ff0000; transform: scale(1.03); }
+        .status-danger .shield-fill { width: 100%; box-shadow: 0 0 8px #ff0000; }
+
+        /* 断开连接 */
+        .disconnected { border-color: #1a1c22 !important; background: #0c0d10 !important; }
+        .disconnected::before { border-color: #23262f !important; }
+        .disconnected #bpm { color: #2e323c; font-size: 26px; }
+        .disconnected #maxBpm { color: #2e323c; }
+        .disconnected .shield-fill { width: 0% !important; }
+        .disconnected .meta-lbl { color: #1e2026; }
+    </style>
+</head>
+<body>
+    <div id="wrapper" class="container disconnected">
+        <div class="data-row">
+            <span id="bpm">--</span>
+            <div class="shield-meta">
+                <span class="meta-lbl">MAX_SHIELD</span>
+                <span id="maxBpm">--</span>
+            </div>
+        </div>
+        <div class="shield-bar">
+            <div class="shield-fill"></div>
+        </div>
+    </div>
+
+    <script>
+        let socket = null;
+        let lastMessageTime = Date.now();
+        let currentStatus = 'disconnected'; 
+        let currentHR = '--';
+        let currentMax = '--';
+
+        const bpmEl = document.getElementById('bpm');
+        const maxEl = document.getElementById('maxBpm');
+        const wrapper = document.getElementById('wrapper');
+
+        function connect() {
+            if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+            socket = new WebSocket('ws://127.0.0.1:8001');
+
+            socket.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    lastMessageTime = Date.now();
+
+                    if (data.connected && data.heart_rate > 0) {
+                        const hr = data.heart_rate;
+                        const max = data.max_heart_rate || '--';
+
+                        if (hr !== currentHR) {
+                            bpmEl.innerText = hr;
+                            currentHR = hr;
+                        }
+                        if (max !== currentMax) {
+                            maxEl.innerText = max;
+                            currentMax = max;
+                        }
+
+                        let targetStatus = 'status-normal';
+                        if (hr >= 120) targetStatus = 'status-danger';
+                        else if (hr >= 100) targetStatus = 'status-warning';
+
+                        if (currentStatus !== targetStatus) {
+                            wrapper.classList.remove('disconnected', 'status-normal', 'status-warning', 'status-danger');
+                            wrapper.classList.add(targetStatus);
+                            currentStatus = targetStatus;
+                        }
+                    } else {
+                        updateStateToDisconnected("OFF");
+                    }
+                } catch (e) { console.error("Data error:", e); }
+            };
+
+            socket.onclose = () => { updateStateToDisconnected("LOST"); setTimeout(connect, 5000); };
+            socket.onerror = () => { socket.close(); };
+        }
+
+        function updateStateToDisconnected(text) {
+            if (currentStatus !== 'disconnected') {
+                wrapper.className = 'container disconnected';
+                bpmEl.innerText = text;
+                maxEl.innerText = '--';
+                currentStatus = 'disconnected';
+                currentHR = '--';
+                currentMax = '--';
+            }
+        }
+
+        setInterval(() => {
+            if (currentStatus !== 'disconnected' && (Date.now() - lastMessageTime > 4000)) {
+                updateStateToDisconnected("WAIT");
+            }
+        }, 1000);
+
+        connect();
+    </script>
+</body>
+</html>

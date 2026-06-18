@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { background: transparent; overflow: hidden; margin: 0; padding: 20px; }
+        
+        /* 滴落淤泥悬浮风，无背景 */
+        .container { 
+            display: flex; align-items: baseline; justify-content: center;
+            font-family: 'Impact', 'Arial Black', sans-serif; /* 粗壮字体以便text-shadow堆积 */
+            transition: all 0.4s ease;
+        }
+
+        /* 淤泥蠕动/滴落动效 */
+        @keyframes creep-drip { 
+            0% { transform: scaleY(1) translateY(0); filter: brightness(1); } 
+            50% { transform: scaleY(1.05) translateY(2px); filter: brightness(1.2); } 
+            100% { transform: scaleY(1) translateY(0); filter: brightness(1); } 
+        }
+
+        /* 去掉心型图标，只 focus 文字 */
+        .heart { display: none; }
+        
+        /* 利用层叠 text-shadow 手工雕刻滴落感 */
+        #bpm { 
+            font-size: 90px; min-width: 100px; text-align: center; font-weight: 900; 
+            color: #1a2b1a; /* 深淤泥绿黑 */
+            text-shadow: 
+                0 5px 0 #1a2b1a, 
+                0 10px 10px rgba(0,0,0,0.5), 
+                0 20px 20px rgba(0,0,0,0.4);
+            animation: creep-drip 1.5s infinite ease-in-out;
+        }
+        
+        .max-info { display: flex; flex-direction: column; align-items: flex-start; margin-left: 20px; opacity: 0.6; }
+        .max-label { font-size: 10px; color: #1a2b1a; text-transform: uppercase; letter-spacing: 2px; }
+        .max-label::after { content: 'hr: '; opacity: 0.4; }
+        #maxBpm { font-size: 22px; color: #1a2b1a; font-weight: bold; }
+
+        /* 状态控制：改变淤泥颜色 */
+        /* Normal状态：深绿黑淤泥 */
+        .status-normal #bpm { color: #1a2b1a; text-shadow: 0 5px 0 #1a2b1a, 0 10px 10px rgba(0,0,0,0.5), 0 20px 20px rgba(0,0,0,0.4); }
+
+        /* Warning状态：变暗黄浊水色 */
+        .status-warning #bpm { color: #b3a77a; text-shadow: 0 5px 0 #b3a77a, 0 10px 10px rgba(179,167,122,0.5), 0 20px 20px rgba(179,167,122,0.4); animation: creep-drip 0.8s infinite ease-in-out; }
+        .status-warning #maxBpm { color: #b3a77a; }
+
+        /* Danger状态：火山熔岩/鲜血亮红，加速滴落伴随微抖动 */
+        @keyframes bloody-panic {
+            0% { transform: translate(1px, 1px) scaleY(1.05); }
+            50% { transform: translate(-1px, -1px) scaleY(1.1); }
+            100% { transform: translate(1px, -1px) scaleY(1.05); }
+        }
+        .status-danger #bpm { color: #ff0000; text-shadow: 0 5px 0 #ff0000, 0 10px 15px rgba(255,0,0,0.5), 0 25px 25px rgba(255,0,0,0.4); animation: bloody-panic 0.1s infinite; }
+        .status-danger #maxBpm { color: #ff0000; text-shadow: 0 0 10px rgba(255,0,0,0.4); }
+        .status-danger .max-info { opacity: 1; }
+
+        .disconnected { opacity: 0.2; }
+        .disconnected #bpm { text-shadow: none !important; color: #444; }
+    </style>
+</head>
+<body>
+    <div id="wrapper" class="container disconnected">
+        <span id="heartIcon" class="heart"></span>
+        <span id="bpm">--</span>
+        <div class="max-info">
+            <span class="max-label">HI: </span>
+            <span id="maxBpm">--</span>
+        </div>
+    </div>
+
+    <script>
+        let socket = null; let lastMessageTime = Date.now();
+        let currentStatus = 'disconnected'; let currentHR = '--'; let currentMax = '--';
+        const bpmEl = document.getElementById('bpm'); const maxEl = document.getElementById('maxBpm'); const wrapper = document.getElementById('wrapper');
+
+        function connect() {
+            if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+            socket = new WebSocket('ws://127.0.0.1:8001');
+            socket.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data); lastMessageTime = Date.now();
+                    if (data.connected && data.heart_rate > 0) {
+                        const hr = data.heart_rate; const max = data.max_heart_rate || '--';
+                        if (hr !== currentHR) { bpmEl.innerText = hr; currentHR = hr; }
+                        if (max !== currentMax) { maxEl.innerText = max; currentMax = max; }
+                        let targetStatus = 'status-normal';
+                        if (hr >= 120) targetStatus = 'status-danger';
+                        else if (hr >= 100) targetStatus = 'status-warning';
+                        if (currentStatus !== targetStatus) {
+                            wrapper.classList.remove('disconnected', 'status-normal', 'status-warning', 'status-danger');
+                            wrapper.classList.add(targetStatus); currentStatus = targetStatus;
+                        }
+                    } else { updateStateToDisconnected("---"); }
+                } catch (e) { console.error("Data error:", e); }
+            };
+            socket.onclose = () => { updateStateToDisconnected("COLD"); setTimeout(connect, 5000); };
+            socket.onerror = () => { socket.close(); };
+        }
+        function updateStateToDisconnected(text) {
+            if (currentStatus !== 'disconnected') {
+                wrapper.className = 'container disconnected'; bpmEl.innerText = text; maxEl.innerText = '--';
+                currentStatus = 'disconnected'; currentHR = '--'; currentMax = '--';
+            }
+        }
+        setInterval(() => { if (currentStatus !== 'disconnected' && (Date.now() - lastMessageTime > 4000)) updateStateToDisconnected("COLD"); }, 1000);
+        connect();
+    </script>
+</body>
+</html>

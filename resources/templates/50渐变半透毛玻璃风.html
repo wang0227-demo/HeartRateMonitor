@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { background: transparent; overflow: hidden; margin: 0; padding: 20px; }
+        
+        /* 高透雕刻毛玻璃面板 */
+        .container { 
+            display: inline-flex;
+            align-items: center;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-bottom: 2px solid rgba(255, 255, 255, 0.2);
+            padding: 10px 22px;
+            border-radius: 8px;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.2);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            position: relative;
+            transition: all 0.5s ease;
+        }
+        
+        /* 核心大字：通透高对比白 */
+        #bpm { 
+            font-size: 46px; font-weight: 800; color: #ffffff; 
+            line-height: 1; min-width: 75px; text-align: center;
+            letter-spacing: -1px;
+        }
+        
+        /* 细线分割 */
+        .glass-split {
+            width: 1px; height: 28px; background: rgba(255, 255, 255, 0.15);
+            margin: 0 16px;
+        }
+        
+        /* 右侧副数据 */
+        .glass-meta { display: flex; flex-direction: column; line-height: 1.1; }
+        .glass-lbl { font-size: 8px; color: rgba(255, 255, 255, 0.35); font-weight: bold; letter-spacing: 0.5px; }
+        #maxBpm { font-size: 18px; color: rgba(255, 255, 255, 0.85); font-weight: 700; margin-top: 3px; }
+
+        /* 状态变色（保持高透，纯靠内发光和文字色彩转换） */
+        .status-normal {}
+        
+        .status-warning { 
+            border-color: rgba(255, 170, 0, 0.25);
+            box-shadow: inset 0 0 15px rgba(255, 170, 0, 0.1), 0 8px 32px 0 rgba(0, 0, 0, 0.2);
+        }
+        .status-warning #bpm { color: #ffaa00; }
+
+        @keyframes glass-heat {
+            0% { box-shadow: inset 0 0 10px rgba(255, 0, 68, 0.2), 0 8px 32px 0 rgba(255, 0, 68, 0.1); }
+            100% { box-shadow: inset 0 0 25px rgba(255, 0, 68, 0.4), 0 8px 32px 0 rgba(255, 0, 68, 0.2); }
+        }
+        .status-danger { 
+            border-color: rgba(255, 0, 68, 0.3);
+            animation: glass-heat 0.5s infinite alternate ease-in-out;
+        }
+        .status-danger #bpm { color: #ff0044; text-shadow: 0 0 10px rgba(255, 0, 68, 0.4); }
+
+        /* 断开连接（玻璃蒙尘，失去光泽） */
+        .disconnected { 
+            background: rgba(0, 0, 0, 0.1) !important; 
+            border-color: rgba(255, 255, 255, 0.03) !important; 
+            box-shadow: none !important; backdrop-filter: none !important; 
+        }
+        .disconnected #bpm { color: rgba(255, 255, 255, 0.08); font-size: 30px; font-weight: 400; }
+        .disconnected .glass-split { background: rgba(255, 255, 255, 0.03); }
+        .disconnected #maxBpm { color: rgba(255, 255, 255, 0.05); }
+        .disconnected .glass-lbl { color: rgba(255, 255, 255, 0.02); }
+    </style>
+</head>
+<body>
+    <div id="wrapper" class="container disconnected">
+        <span id="bpm">--</span>
+        <div class="glass-split"></div>
+        <div class="glass-meta">
+            <span class="glass-lbl">PEAK LIMIT</span>
+            <span id="maxBpm">--</span>
+        </div>
+    </div>
+
+    <script>
+        let socket = null;
+        let lastMessageTime = Date.now();
+        let currentStatus = 'disconnected'; 
+        let currentHR = '--';
+        let currentMax = '--';
+
+        const bpmEl = document.getElementById('bpm');
+        const maxEl = document.getElementById('maxBpm');
+        const wrapper = document.getElementById('wrapper');
+
+        function connect() {
+            if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+            socket = new WebSocket('ws://127.0.0.1:8001');
+
+            socket.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    lastMessageTime = Date.now();
+
+                    if (data.connected && data.heart_rate > 0) {
+                        const hr = data.heart_rate;
+                        const max = data.max_heart_rate || '--';
+
+                        if (hr !== currentHR) {
+                            bpmEl.innerText = hr;
+                            currentHR = hr;
+                        }
+                        if (max !== currentMax) {
+                            maxEl.innerText = max;
+                            currentMax = max;
+                        }
+
+                        let targetStatus = 'status-normal';
+                        if (hr >= 120) targetStatus = 'status-danger';
+                        else if (hr >= 100) targetStatus = 'status-warning';
+
+                        if (currentStatus !== targetStatus) {
+                            wrapper.classList.remove('disconnected', 'status-normal', 'status-warning', 'status-danger');
+                            wrapper.classList.add(targetStatus);
+                            currentStatus = targetStatus;
+                        }
+                    } else {
+                        updateStateToDisconnected("OFF");
+                    }
+                } catch (e) { console.error("Data error:", e); }
+            };
+
+            socket.onclose = () => { updateStateToDisconnected("LOST"); setTimeout(connect, 5000); };
+            socket.onerror = () => { socket.close(); };
+        }
+
+        function updateStateToDisconnected(text) {
+            if (currentStatus !== 'disconnected') {
+                wrapper.className = 'container disconnected';
+                bpmEl.innerText = text;
+                maxEl.innerText = '--';
+                currentStatus = 'disconnected';
+                currentHR = '--';
+                currentMax = '--';
+            }
+        }
+
+        setInterval(() => {
+            if (currentStatus !== 'disconnected' && (Date.now() - lastMessageTime > 4000)) {
+                updateStateToDisconnected("WAIT");
+            }
+        }, 1000);
+
+        connect();
+    </script>
+</body>
+</html>

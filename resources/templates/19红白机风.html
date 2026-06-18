@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { background: transparent; overflow: hidden; margin: 0; padding: 20px; }
+        
+        /* 经典像素硬边框与大色块阴影 */
+        .container { 
+            display: flex; align-items: center; 
+            font-family: 'Press Start 2P', 'Courier New', Courier, monospace; /* 强制等宽像素感 */
+            background-color: #f8f8f8;
+            border: 4px solid #000;
+            padding: 10px 25px;
+            box-shadow: 5px 5px 0px #000;
+            transition: all 0.2s ease;
+        }
+
+        /* 像素风定格跳动（steps函数能消除平滑过渡，产生卡顿的电子感） */
+        @keyframes pixel-beat { 
+            0%, 100% { transform: scale(1); } 
+            50% { transform: scale(1.2); } 
+        }
+
+        .heart { margin-right: 15px; font-size: 40px; display: inline-block; filter: drop-shadow(2px 2px 0px #000); }
+        
+        /* 像素硬粗体 */
+        #bpm { 
+            font-size: 65px; min-width: 90px; text-align: center; font-weight: bold;
+            color: #000;
+            text-shadow: 3px 3px 0px #ccc;
+        }
+        
+        .max-info { 
+            display: flex; flex-direction: column; align-items: flex-start; margin-left: 20px; 
+            border-left: 4px dashed #000; padding-left: 15px;
+        }
+        .max-label { font-size: 11px; font-weight: bold; color: #555; text-transform: uppercase; }
+        #maxBpm { font-size: 24px; font-weight: bold; color: #000; margin-top: 5px; }
+
+        /* 经典红白机配色切换 */
+        /* Normal状态：马里奥经典红白蓝 */
+        .status-normal { background-color: #00a2e8; border-color: #000; }
+        .status-normal #bpm { color: #fff; text-shadow: 3px 3px 0px #000; }
+        .status-normal .max-label { color: #fff; }
+        .status-normal #maxBpm { color: #fff; }
+        .status-normal .heart { animation: pixel-beat 1s infinite steps(2); }
+
+        /* Warning状态：塞尔达迷宫金黄 */
+        .status-warning { background-color: #ffc90e; }
+        .status-warning #bpm { color: #000; text-shadow: 3px 3px 0px #fff; }
+        .status-warning .heart { animation: pixel-beat 0.5s infinite steps(2); }
+
+        /* Danger状态：Game Over 危机红 */
+        .status-danger { background-color: #e1001a; animation: pixel-beat 0.25s infinite steps(2); }
+        .status-danger #bpm { color: #fff; text-shadow: 4px 4px 0px #000; }
+        .status-danger .max-label { color: #000; }
+        .status-danger #maxBpm { color: #000; }
+        .status-danger .heart { animation: pixel-beat 0.25s infinite steps(2); }
+
+        .disconnected { background-color: #7f7f7f; box-shadow: 5px 5px 0px #555; }
+        .disconnected #bpm, .disconnected #maxBpm { color: #333; text-shadow: none; }
+        .disconnected .heart { animation: none !important; filter: grayscale(1); }
+    </style>
+</head>
+<body>
+    <div id="wrapper" class="container disconnected">
+        <span id="heartIcon" class="heart">❤️</span>
+        <span id="bpm">--</span>
+        <div class="max-info">
+            <span class="max-label">HI-SCORE</span>
+            <span id="maxBpm">--</span>
+        </div>
+    </div>
+
+    <script>
+        let socket = null; let lastMessageTime = Date.now();
+        let currentStatus = 'disconnected'; let currentHR = '--'; let currentMax = '--';
+        const bpmEl = document.getElementById('bpm'); const maxEl = document.getElementById('maxBpm'); const wrapper = document.getElementById('wrapper');
+
+        function connect() {
+            if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+            socket = new WebSocket('ws://127.0.0.1:8001');
+            socket.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data); lastMessageTime = Date.now();
+                    if (data.connected && data.heart_rate > 0) {
+                        const hr = data.heart_rate; const max = data.max_heart_rate || '--';
+                        if (hr !== currentHR) { bpmEl.innerText = hr; currentHR = hr; }
+                        if (max !== currentMax) { maxEl.innerText = max; currentMax = max; }
+                        let targetStatus = 'status-warning';
+                        if (hr >= 120) targetStatus = 'status-danger';
+                        else if (hr >= 100) targetStatus = 'status-warning';
+                        if (currentStatus !== targetStatus) {
+                            wrapper.classList.remove('disconnected', 'status-normal', 'status-warning', 'status-danger');
+                            wrapper.classList.add(targetStatus); currentStatus = targetStatus;
+                        }
+                    } else { updateStateToDisconnected("DIE"); }
+                } catch (e) { console.error("Data error:", e); }
+            };
+            socket.onclose = () => { updateStateToDisconnected("LOST"); setTimeout(connect, 5000); };
+            socket.onerror = () => { socket.close(); };
+        }
+        function updateStateToDisconnected(text) {
+            if (currentStatus !== 'disconnected') {
+                wrapper.className = 'container disconnected'; bpmEl.innerText = text; maxEl.innerText = '---';
+                currentStatus = 'disconnected'; currentHR = '--'; currentMax = '--';
+            }
+        }
+        setInterval(() => { if (currentStatus !== 'disconnected' && (Date.now() - lastMessageTime > 4000)) updateStateToDisconnected("WAIT"); }, 1000);
+        connect();
+    </script>
+</body>
+</html>

@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { background: transparent; overflow: hidden; margin: 0; padding: 20px; }
+        
+        /* 极简垂直轴舞台 */
+        .container { 
+            display: inline-flex;
+            align-items: center;
+            background: transparent;
+            padding: 4px 10px;
+            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            position: relative;
+        }
+
+        /* 极细的垂直美学质感主线 */
+        .v-axis {
+            width: 2px; height: 38px; background: var(--axis-color, rgba(255,255,255,0.2));
+            margin-right: 15px; transition: all 0.4s ease;
+        }
+        
+        /* 垂直堆叠的数据架构 */
+        .data-stack { display: flex; flex-direction: column; line-height: 1; }
+        
+        .row-main { display: flex; align-items: baseline; }
+        #bpm { 
+            font-size: 38px; font-weight: 300; color: #ffffff; 
+            letter-spacing: -1px; min-width: 65px;
+        }
+        .unit { font-size: 11px; color: rgba(255,255,255,0.2); font-weight: 400; margin-left: 3px; letter-spacing: 0.5px; }
+        
+        .row-sub { font-size: 10px; color: rgba(255,255,255,0.4); margin-top: 3px; font-weight: 400; letter-spacing: 0.5px; }
+        #maxBpm { font-weight: bold; color: var(--axis-color, rgba(255,255,255,0.5)); margin-left: 2px; }
+
+        /* 极简呼吸律动 */
+        @keyframes minimalist-pulse {
+            0% { opacity: 0.8; }
+            100% { opacity: 1; transform: scaleX(1.5); }
+        }
+
+        /* 状态判定 */
+        .status-normal { --axis-color: rgba(255,255,255,0.25); }
+        
+        .status-warning { --axis-color: #ffaa00; }
+        .status-warning #bpm { color: #ffaa00; font-weight: 400; }
+
+        .status-danger { --axis-color: #ff0044; }
+        .status-danger #bpm { color: #ff0044; font-weight: 500; }
+        .status-danger .v-axis { animation: minimalist-pulse 0.3s infinite alternate ease-in-out; }
+
+        /* 系统离线（灰度休眠） */
+        .disconnected .v-axis { background: rgba(255,255,255,0.06) !important; animation: none !important; }
+        .disconnected #bpm { color: rgba(255,255,255,0.1); font-size: 26px; font-weight: 300; }
+        .disconnected .unit, .disconnected .row-sub { color: rgba(255,255,255,0.04); }
+        .disconnected #maxBpm { color: rgba(255,255,255,0.04); }
+    </style>
+</head>
+<body>
+    <div id="wrapper" class="container disconnected">
+        <div class="v-axis"></div>
+        <div class="data-stack">
+            <div class="row-main">
+                <span id="bpm">--</span>
+                <span class="unit">BPM</span>
+            </div>
+            <div class="row-sub">PEAK <span id="maxBpm">--</span></div>
+        </div>
+    </div>
+
+    <script>
+        let socket = null;
+        let lastMessageTime = Date.now();
+        let currentStatus = 'disconnected'; 
+        let currentHR = '--';
+        let currentMax = '--';
+
+        const bpmEl = document.getElementById('bpm');
+        const maxEl = document.getElementById('maxBpm');
+        const wrapper = document.getElementById('wrapper');
+
+        function connect() {
+            if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+            socket = new WebSocket('ws://127.0.0.1:8001');
+
+            socket.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    lastMessageTime = Date.now();
+
+                    if (data.connected && data.heart_rate > 0) {
+                        const hr = data.heart_rate;
+                        const max = data.max_heart_rate || '--';
+
+                        if (hr !== currentHR) {
+                            bpmEl.innerText = hr;
+                            currentHR = hr;
+                        }
+                        if (max !== currentMax) {
+                            maxEl.innerText = max;
+                            currentMax = max;
+                        }
+
+                        let targetStatus = 'status-normal';
+                        if (hr >= 120) targetStatus = 'status-danger';
+                        else if (hr >= 100) targetStatus = 'status-warning';
+
+                        if (currentStatus !== targetStatus) {
+                            wrapper.classList.remove('disconnected', 'status-normal', 'status-warning', 'status-danger');
+                            wrapper.classList.add(targetStatus);
+                            currentStatus = targetStatus;
+                        }
+                    } else {
+                        updateStateToDisconnected("OFF");
+                    }
+                } catch (e) { console.error("Data error:", e); }
+            };
+
+            socket.onclose = () => { updateStateToDisconnected("LOST"); setTimeout(connect, 5000); };
+            socket.onerror = () => { socket.close(); };
+        }
+
+        function updateStateToDisconnected(text) {
+            if (currentStatus !== 'disconnected') {
+                wrapper.className = 'container disconnected';
+                bpmEl.innerText = text;
+                maxEl.innerText = '--';
+                currentStatus = 'disconnected';
+                currentHR = '--';
+                currentMax = '--';
+            }
+        }
+
+        setInterval(() => {
+            if (currentStatus !== 'disconnected' && (Date.now() - lastMessageTime > 4000)) {
+                updateStateToDisconnected("WAIT");
+            }
+        }, 1000);
+
+        connect();
+    </script>
+</body>
+</html>

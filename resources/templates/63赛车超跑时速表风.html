@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { background: transparent; overflow: hidden; margin: 0; padding: 20px; }
+        
+        /* 倾斜赛车仪表盘外框 */
+        .container { 
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            font-family: 'Impact', 'Arial Black', sans-serif;
+            width: 150px;
+            background: #0f1015;
+            padding: 12px 16px;
+            border-top: 4px solid var(--race-color, #00ffcc);
+            transform: skewX(-10deg); /* 整体倾斜，营造速度感 */
+            box-shadow: 5px 5px 15px rgba(0,0,0,0.6);
+            transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+        }
+        
+        /* 顶部小文字行 */
+        .top-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            color: #666e80;
+            font-size: 10px;
+            letter-spacing: 1px;
+            margin-bottom: 2px;
+            transform: skewX(10deg); /* 反向倾斜使文字回正 */
+        }
+        
+        /* 核心大数值（时速表质感） */
+        #bpm { 
+            font-size: 56px; 
+            line-height: 0.9; 
+            color: #ffffff; 
+            text-align: left;
+            font-style: italic;
+            transform: skewX(10deg);
+            will-change: transform;
+        }
+        
+        /* 下层最高值数据区 */
+        .max-info { 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center;
+            margin-top: 8px; 
+            padding-top: 6px;
+            border-top: 1px solid #222630;
+            transform: skewX(10deg);
+        }
+        .max-label { font-size: 9px; color: #444b59; font-weight: bold; }
+        #maxBpm { font-size: 18px; color: var(--race-color, #00ffcc); font-weight: bold; }
+        
+        /* 赛车红线区闪烁动画 */
+        @keyframes redline-flash {
+            0%, 100% { border-top-color: #ff0044; background: #0f1015; }
+            50% { border-top-color: #ffffff; background: #33000e; }
+        }
+
+        /* 状态判定 */
+        .status-normal { --race-color: #00ffcc; }
+        
+        .status-warning { --race-color: #ffcc00; border-top-width: 6px; }
+        .status-warning #bpm { color: #ffcc00; }
+        
+        .status-danger { animation: redline-flash 0.3s infinite; border-top-width: 8px; }
+        .status-danger #bpm { color: #ff0044; transform: skewX(10deg) scale(1.05); }
+
+        /* 断开连接（引擎熄火状态） */
+        .disconnected { border-top-color: #333ba3 !important; background: #121317 !important; transform: none !important; box-shadow: none !important; }
+        .disconnected .top-meta { transform: none; color: #444; }
+        .disconnected #bpm { transform: none; color: #3a3f4d; font-size: 36px; text-align: center; }
+        .disconnected .max-info { transform: none; border-top-color: #1a1b20; }
+        .disconnected .max-label { color: #2a2d35; }
+        .disconnected #maxBpm { color: #3a3f4d; }
+    </style>
+</head>
+<body>
+    <div id="wrapper" class="container disconnected">
+        <div class="top-meta">
+            <span>TACHOMETER</span>
+            <span>BPM</span>
+        </div>
+        <span id="bpm">--</span>
+        <div class="max-info">
+            <span class="max-label">RECORD PEAK</span>
+            <span id="maxBpm">--</span>
+        </div>
+    </div>
+
+    <script>
+        let socket = null;
+        let lastMessageTime = Date.now();
+        let currentStatus = 'disconnected'; 
+        let currentHR = '--';
+        let currentMax = '--';
+
+        const bpmEl = document.getElementById('bpm');
+        const maxEl = document.getElementById('maxBpm');
+        const wrapper = document.getElementById('wrapper');
+
+        function connect() {
+            if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+            socket = new WebSocket('ws://127.0.0.1:8001');
+
+            socket.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    lastMessageTime = Date.now();
+
+                    if (data.connected && data.heart_rate > 0) {
+                        const hr = data.heart_rate;
+                        const max = data.max_heart_rate || '--';
+
+                        if (hr !== currentHR) {
+                            bpmEl.innerText = hr;
+                            currentHR = hr;
+                        }
+                        if (max !== currentMax) {
+                            maxEl.innerText = max;
+                            currentMax = max;
+                        }
+
+                        let targetStatus = 'status-normal';
+                        if (hr >= 120) targetStatus = 'status-danger';
+                        else if (hr >= 100) targetStatus = 'status-warning';
+
+                        if (currentStatus !== targetStatus) {
+                            wrapper.classList.remove('disconnected', 'status-normal', 'status-warning', 'status-danger');
+                            wrapper.classList.add(targetStatus);
+                            currentStatus = targetStatus;
+                        }
+                    } else {
+                        updateStateToDisconnected("OFF");
+                    }
+                } catch (e) { console.error("Data error:", e); }
+            };
+
+            socket.onclose = () => { updateStateToDisconnected("LOST"); setTimeout(connect, 5000); };
+            socket.onerror = () => { socket.close(); };
+        }
+
+        function updateStateToDisconnected(text) {
+            if (currentStatus !== 'disconnected') {
+                wrapper.className = 'container disconnected';
+                bpmEl.innerText = text;
+                maxEl.innerText = '--';
+                currentStatus = 'disconnected';
+                currentHR = '--';
+                currentMax = '--';
+            }
+        }
+
+        setInterval(() => {
+            if (currentStatus !== 'disconnected' && (Date.now() - lastMessageTime > 4000)) {
+                updateStateToDisconnected("WAIT");
+            }
+        }, 1000);
+
+        connect();
+    </script>
+</body>
+</html>

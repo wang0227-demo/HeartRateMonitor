@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { background: transparent; overflow: hidden; margin: 0; padding: 20px; }
+        
+        /* 纯悬浮全息发光，无背景 */
+        .container { 
+            display: flex; align-items: center; 
+            font-family: 'Segoe UI', Impact, sans-serif;
+            color: #00ffff; /* 赛博青 */
+            transition: all 0.4s ease;
+        }
+
+        /* 全息投影微弱频闪与隐现动画 */
+        @keyframes holo-glow {
+            0%, 100% { opacity: 0.9; filter: drop-shadow(0 0 4px #00ffff) brightness(1); }
+            45% { opacity: 1; filter: drop-shadow(0 0 12px #00ffff) brightness(1.2); }
+            50% { opacity: 0.85; filter: drop-shadow(0 0 2px #00ffff) brightness(0.9); }
+            52% { opacity: 1; filter: drop-shadow(0 0 10px #00ffff) brightness(1.1); }
+        }
+
+        /* 电子脉冲跳动 */
+        @keyframes pulse-fast {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.18); }
+        }
+
+        /* 霓虹线条感的心型图标 */
+        .heart { 
+            margin-right: 20px; font-size: 50px; display: inline-block;
+            animation: holo-glow 3s infinite ease-in-out;
+            will-change: transform, filter;
+        }
+        
+        /* 镂空/发光层叠字体 */
+        #bpm { 
+            font-size: 85px; min-width: 95px; text-align: center; font-weight: 900;
+            letter-spacing: -2px;
+            animation: holo-glow 3s infinite ease-in-out;
+        }
+        
+        .max-info { 
+            display: flex; flex-direction: column; margin-left: 20px; 
+            border-left: 2px solid rgba(0, 255, 255, 0.4); padding-left: 15px;
+        }
+        .max-label { font-size: 10px; font-family: monospace; letter-spacing: 2px; opacity: 0.6; }
+        #maxBpm { font-size: 26px; font-weight: bold; }
+
+        /* 状态控制：通过状态直接改变全息投影的波长颜色 */
+        .status-normal { color: #00ffff; }
+        .status-normal .heart { animation: holo-glow 3s infinite, pulse-fast 1.2s infinite ease-in-out; }
+        
+        /* 警告：切换为霓虹粉紫 */
+        .status-warning { color: #ff00ff; }
+        .status-warning .max-info { border-color: rgba(255, 0, 255, 0.4); }
+        .status-warning .heart { animation: holo-glow 2s infinite, pulse-fast 0.6s infinite ease-in-out; filter: drop-shadow(0 0 8px #ff00ff); }
+        .status-warning #bpm { animation: holo-glow 2s infinite; }
+
+        /* 危险：警报赤红，全息信号开始严重过载闪烁 */
+        @keyframes holo-overload {
+            0%, 100% { transform: skewX(0deg) scale(1); opacity: 1; }
+            50% { transform: skewX(-5deg) scale(1.05); opacity: 0.8; filter: drop-shadow(0 0 20px #ff0055); }
+        }
+        .status-danger { color: #ff0055; animation: holo-overload 0.15s infinite; }
+        .status-danger .max-info { border-color: #ff0055; }
+        .status-danger .heart { animation: pulse-fast 0.25s infinite alternate !important; filter: drop-shadow(0 0 15px #ff0055); }
+
+        .disconnected { opacity: 0.15; color: #fff !important; }
+        .disconnected .max-info { border-color: #fff; }
+        .disconnected .heart, .disconnected #bpm { animation: none !important; filter: none !important; }
+    </style>
+</head>
+<body>
+    <div id="wrapper" class="container disconnected">
+        <span id="heartIcon" class="heart">♡</span>
+        <span id="bpm">--</span>
+        <div class="max-info">
+            <span class="max-label">SYS_MAX</span>
+            <span id="maxBpm">--</span>
+        </div>
+    </div>
+
+    <script>
+        let socket = null; let lastMessageTime = Date.now();
+        let currentStatus = 'disconnected'; let currentHR = '--'; let currentMax = '--';
+        const bpmEl = document.getElementById('bpm'); const maxEl = document.getElementById('maxBpm'); const wrapper = document.getElementById('wrapper');
+
+        function connect() {
+            if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+            socket = new WebSocket('ws://127.0.0.1:8001');
+            socket.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data); lastMessageTime = Date.now();
+                    if (data.connected && data.heart_rate > 0) {
+                        const hr = data.heart_rate; const max = data.max_heart_rate || '--';
+                        if (hr !== currentHR) { bpmEl.innerText = hr; currentHR = hr; }
+                        if (max !== currentMax) { maxEl.innerText = max; currentMax = max; }
+                        let targetStatus = 'status-normal';
+                        if (hr >= 120) targetStatus = 'status-danger';
+                        else if (hr >= 100) targetStatus = 'status-warning';
+                        if (currentStatus !== targetStatus) {
+                            wrapper.classList.remove('disconnected', 'status-normal', 'status-warning', 'status-danger');
+                            wrapper.classList.add(targetStatus); currentStatus = targetStatus;
+                        }
+                    } else { updateStateToDisconnected("---"); }
+                } catch (e) { console.error("Data error:", e); }
+            };
+            socket.onclose = () => { updateStateToDisconnected("LOST"); setTimeout(connect, 5000); };
+            socket.onerror = () => { socket.close(); };
+        }
+        function updateStateToDisconnected(text) {
+            if (currentStatus !== 'disconnected') {
+                wrapper.className = 'container disconnected'; bpmEl.innerText = text; maxEl.innerText = '---';
+                currentStatus = 'disconnected'; currentHR = '--'; currentMax = '--';
+            }
+        }
+        setInterval(() => { if (currentStatus !== 'disconnected' && (Date.now() - lastMessageTime > 4000)) updateStateToDisconnected("STBY"); }, 1000);
+        connect();
+    </script>
+</body>
+</html>

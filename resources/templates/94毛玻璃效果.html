@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+body{background: transparent;padding:20px;margin:0}
+.overlay-glass{
+  width:180px;height:150px;
+  background:rgba(255,255,255,0.08);backdrop-filter:blur(10px);
+  box-sizing: border-box;
+  border:1px solid rgba(255,255,255,0.15);border-radius:10px;padding:12px;
+  color:#fff;font-family:system-ui;
+}
+.ov-title{font-size:14px;opacity:0.8}
+#bpm{font-size:52px;margin:12px 0}
+.ov-max{font-size:12px;opacity:0.6}
+.status-normal #bpm{color:#9ef}
+.status-warning #bpm{color:#ffd880}
+.status-danger #bpm{color:#ff8888}
+.disconnected{background:rgba(255,255,255,0.03)}
+.disconnected #bpm{color:#666}
+</style>
+</head>
+<body>
+<div id="wrap" class="overlay-glass disconnected">
+  <div class="ov-title">心率监测</div>
+  <div id="bpm">--</div>
+  <div class="ov-max">历史峰值：<span id="maxBpm">--</span></div>
+</div>
+<script>
+let socket,lastTime=Date.now(),status='disconnected';
+const bpm=document.getElementById('bpm'),maxBpm=document.getElementById('maxBpm'),wrap=document.getElementById('wrap');
+function connect(){
+  if(socket&&[0,1].includes(socket.readyState))return;
+  socket=new WebSocket('ws://127.0.0.1:8001');
+  socket.onmessage=e=>{
+    try{
+      const d=JSON.parse(e.data);lastTime=Date.now();
+      if(d.connected&&d.heart_rate>0){
+        bpm.innerText=d.heart_rate;maxBpm.innerText=d.max_heart_rate||'--';
+        let st='status-normal';
+        if(d.heart_rate>=120)st='status-danger';
+        else if(d.heart_rate>=100)st='status-warning';
+        wrap.className='overlay-glass '+st;status=st;
+      }else{updateDisconnect('离线')}
+    }catch(err){}
+  }
+  socket.onclose=()=>{updateDisconnect('断连');setTimeout(connect,5000)}
+}
+function updateDisconnect(t){
+  if(status==='disconnected')return;
+  wrap.className='overlay-glass disconnected';bpm.innerText=t;maxBpm.innerText='--';status='disconnected';
+}
+setInterval(()=>{if(status!=='disconnected'&&Date.now()-lastTime>4000)updateDisconnect('超时')},1000);
+connect();
+</script>
+</body>
+</html>

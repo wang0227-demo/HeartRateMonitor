@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { background: transparent; overflow: hidden; margin: 0; padding: 20px; }
+        
+        /* 严密的四方网格矩阵 */
+        .container { 
+            display: inline-grid;
+            grid-template-columns: auto 55px;
+            grid-template-rows: auto auto;
+            background: rgba(10, 11, 14, 0.85);
+            border: 1px solid var(--matrix-border, rgba(255,255,255,0.12));
+            font-family: 'Courier New', Courier, monospace;
+            position: relative;
+        }
+
+        /* 统一网格仓单元属性 */
+        .matrix-cell {
+            padding: 6px 12px;
+            border: 1px solid var(--matrix-border, rgba(255,255,255,0.12));
+            display: flex; align-items: center; justify-content: center;
+        }
+        
+        /* 左上单元：核心数值 */
+        .cell-bpm { grid-column: 1; grid-row: 1; padding: 4px 16px; }
+        #bpm { font-size: 38px; font-weight: bold; color: #ffffff; line-height: 1; }
+        
+        /* 左下单元：单位 */
+        .cell-unit { grid-column: 1; grid-row: 2; background: rgba(255,255,255,0.02); justify-content: flex-start; padding: 2px 12px; }
+        .unit-text { font-size: 8px; color: rgba(255,255,255,0.3); font-weight: bold; letter-spacing: 1px; }
+        
+        /* 右上单元：极限最高值 */
+        .cell-max { grid-column: 2; grid-row: 1; flex-direction: column; justify-content: center; line-height: 1; }
+        .max-lbl { font-size: 6px; color: rgba(255,255,255,0.25); margin-bottom: 2px; font-family: Arial; font-weight: bold;}
+        #maxBpm { font-size: 15px; color: var(--matrix-accent, #ffffff); font-weight: bold; }
+        
+        /* 右下单元：系统自检矩阵灯 */
+        .cell-sys { grid-column: 2; grid-row: 2; font-size: 7px; color: var(--matrix-accent, rgba(255,255,255,0.2)); font-weight: bold; }
+
+        @keyframes matrix-pulse {
+            0% { opacity: 0.4; background: rgba(255,0,50,0.05); }
+            100% { opacity: 1; background: rgba(255,0,50,0.15); }
+        }
+
+        /* 状态变色（网格线全面参与视觉演变） */
+        .status-normal { --matrix-border: rgba(255,255,255,0.12); --matrix-accent: rgba(255,255,255,0.6); }
+        .status-normal .cell-sys::before { content: 'SYS_OK'; }
+        
+        .status-warning { --matrix-border: rgba(255,180,0,0.4); --matrix-accent: #ffb400; }
+        .status-warning #bpm { color: #ffb400; }
+        .status-warning .cell-sys::before { content: 'WARN'; }
+
+        .status-danger { --matrix-border: #ff0033; --matrix-accent: #ff0033; }
+        .status-danger #bpm { color: #ff0033; }
+        .status-danger .cell-sys::before { content: 'CRIT'; }
+        .status-danger .matrix-cell { animation: matrix-pulse 0.4s infinite alternate ease-in-out; }
+
+        /* 系统崩溃断开连接 */
+        .disconnected { border-color: rgba(255,255,255,0.02) !important; background: transparent !important; }
+        .disconnected .matrix-cell { border-color: rgba(255,255,255,0.02) !important; background: transparent !important; animation: none !important; }
+        .disconnected #bpm { color: rgba(255,255,255,0.05); font-size: 24px; }
+        .disconnected #maxBpm { color: rgba(255,255,255,0.03); }
+        .disconnected .cell-sys::before { content: 'OFF'; color: rgba(255,255,255,0.02); }
+        .disconnected .unit-text, .disconnected .max-lbl { color: transparent; }
+    </style>
+</head>
+<body>
+    <div id="wrapper" class="container disconnected">
+        <div class="matrix-cell cell-bpm"><span id="bpm">--</span></div>
+        <div class="matrix-cell cell-unit"><span class="unit-text">SYS.PULSE</span></div>
+        <div class="matrix-cell cell-max">
+            <span class="max-lbl">PEAK</span>
+            <span id="maxBpm">--</span>
+        </div>
+        <div class="matrix-cell cell-sys"></div>
+    </div>
+
+    <script>
+        let socket = null;
+        let lastMessageTime = Date.now();
+        let currentStatus = 'disconnected'; 
+        let currentHR = '--';
+        let currentMax = '--';
+
+        const bpmEl = document.getElementById('bpm');
+        const maxEl = document.getElementById('maxBpm');
+        const wrapper = document.getElementById('wrapper');
+
+        function connect() {
+            if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+            socket = new WebSocket('ws://127.0.0.1:8001');
+
+            socket.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    lastMessageTime = Date.now();
+
+                    if (data.connected && data.heart_rate > 0) {
+                        const hr = data.heart_rate;
+                        const max = data.max_heart_rate || '--';
+
+                        if (hr !== currentHR) {
+                            bpmEl.innerText = hr;
+                            currentHR = hr;
+                        }
+                        if (max !== currentMax) {
+                            maxEl.innerText = max;
+                            currentMax = max;
+                        }
+
+                        let targetStatus = 'status-normal';
+                        if (hr >= 120) targetStatus = 'status-danger';
+                        else if (hr >= 100) targetStatus = 'status-warning';
+
+                        if (currentStatus !== targetStatus) {
+                            wrapper.classList.remove('disconnected', 'status-normal', 'status-warning', 'status-danger');
+                            wrapper.classList.add(targetStatus);
+                            currentStatus = targetStatus;
+                        }
+                    } else {
+                        updateStateToDisconnected("OFF");
+                    }
+                } catch (e) { console.error("Data error:", e); }
+            };
+
+            socket.onclose = () => { updateStateToDisconnected("LOST"); setTimeout(connect, 5000); };
+            socket.onerror = () => { socket.close(); };
+        }
+
+        function updateStateToDisconnected(text) {
+            if (currentStatus !== 'disconnected') {
+                wrapper.className = 'container disconnected';
+                bpmEl.innerText = text;
+                maxEl.innerText = '--';
+                currentStatus = 'disconnected';
+                currentHR = '--';
+                currentMax = '--';
+            }
+        }
+
+        setInterval(() => {
+            if (currentStatus !== 'disconnected' && (Date.now() - lastMessageTime > 4000)) {
+                updateStateToDisconnected("WAIT");
+            }
+        }, 1000);
+
+        connect();
+    </script>
+</body>
+</html>

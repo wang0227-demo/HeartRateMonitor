@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <style>
+        body { background: transparent; overflow: hidden; margin: 0; padding: 20px; }
+        
+        /* 像素风大框 */
+        .container { 
+            display: inline-flex; 
+            align-items: center; 
+            font-family: 'Press Start 2P', monospace; 
+            background: #000;
+            border: 4px solid #fff;
+            padding: 16px 24px;
+            box-shadow: 6px 6px 0px #000;
+            image-rendering: pixelated;
+            transition: all 0.2s steps(2, start); /* 像素级的僵硬跳动感 */
+        }
+        
+        /* 像素爱心区域 */
+        .heart { 
+            margin-right: 20px; 
+            font-size: 32px; 
+            display: inline-block; 
+            will-change: transform;
+        }
+        
+        /* 核心数值 */
+        #bpm { font-size: 36px; min-width: 100px; text-align: center; color: #fff; }
+        
+        /* 右侧最高值 */
+        .max-info { 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            margin-left: 20px; 
+            border-left: 4px dotted #444;
+            padding-left: 20px;
+        }
+        .max-label { font-size: 8px; color: #888; margin-bottom: 8px; font-weight: bold; }
+        #maxBpm { font-size: 16px; color: #888; }
+        
+        /* 像素风动画（使用 steps 分级，模拟逐帧动画） */
+        @keyframes pixel-beat { 
+            0% { transform: scale(1); } 50% { transform: scale(1.2); } 100% { transform: scale(1); } 
+        }
+        @keyframes pixel-flash {
+            0%, 100% { border-color: #ff0055; background: #000; }
+            50% { border-color: #fff; background: #550022; }
+        }
+        
+        /* 状态样式 */
+        .status-normal { border-color: #00ff55; }
+        .status-normal #bpm { color: #00ff55; }
+        .status-normal .heart { animation: pixel-beat 0.8s infinite steps(2); }
+        
+        .status-warning { border-color: #ffaa00; }
+        .status-warning #bpm { color: #ffaa00; }
+        .status-warning .heart { animation: pixel-beat 0.4s infinite steps(2); }
+        
+        .status-danger { border-color: #ff0055; animation: pixel-flash 0.4s infinite steps(2); }
+        .status-danger #bpm { color: #ff0055; }
+        .status-danger .heart { animation: pixel-beat 0.2s infinite steps(2); }
+
+        /* 断开连接 */
+        .disconnected { border-color: #555 !important; background: #111 !important; box-shadow: 6px 6px 0px #222; }
+        .disconnected .heart { animation: none !important; filter: grayscale(1); opacity: 0.3; }
+        .disconnected #bpm { color: #555; font-size: 24px; }
+        .disconnected #maxBpm { color: #555; }
+        .disconnected .max-label { color: #333; }
+    </style>
+</head>
+<body>
+    <div id="wrapper" class="container disconnected">
+        <span id="heartIcon" class="heart">❤️</span>
+        <span id="bpm">--</span>
+        <div class="max-info">
+            <span class="max-label">HI-SCORE</span>
+            <span id="maxBpm">--</span>
+        </div>
+    </div>
+
+    <script>
+        let socket = null;
+        let lastMessageTime = Date.now();
+        let currentStatus = 'disconnected'; 
+        let currentHR = '--';
+        let currentMax = '--';
+
+        const bpmEl = document.getElementById('bpm');
+        const maxEl = document.getElementById('maxBpm');
+        const wrapper = document.getElementById('wrapper');
+
+        function connect() {
+            if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+            socket = new WebSocket('ws://127.0.0.1:8001');
+
+            socket.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    lastMessageTime = Date.now();
+
+                    if (data.connected && data.heart_rate > 0) {
+                        const hr = data.heart_rate;
+                        const max = data.max_heart_rate || '--';
+
+                        if (hr !== currentHR) {
+                            bpmEl.innerText = hr;
+                            currentHR = hr;
+                        }
+                        if (max !== currentMax) {
+                            maxEl.innerText = max;
+                            currentMax = max;
+                        }
+
+                        let targetStatus = 'status-normal';
+                        if (hr >= 120) targetStatus = 'status-danger';
+                        else if (hr >= 100) targetStatus = 'status-warning';
+
+                        if (currentStatus !== targetStatus) {
+                            wrapper.classList.remove('disconnected', 'status-normal', 'status-warning', 'status-danger');
+                            wrapper.classList.add(targetStatus);
+                            currentStatus = targetStatus;
+                        }
+                    } else {
+                        updateStateToDisconnected("OFF");
+                    }
+                } catch (e) { console.error("Data error:", e); }
+            };
+
+            socket.onclose = () => { 
+                updateStateToDisconnected("LOST"); 
+                setTimeout(connect, 5000); 
+            };
+            socket.onerror = () => { socket.close(); };
+        }
+
+        function updateStateToDisconnected(text) {
+            if (currentStatus !== 'disconnected') {
+                wrapper.className = 'container disconnected';
+                bpmEl.innerText = text;
+                maxEl.innerText = '--';
+                currentStatus = 'disconnected';
+                currentHR = '--';
+                currentMax = '--';
+            }
+        }
+
+        setInterval(() => {
+            if (currentStatus !== 'disconnected' && (Date.now() - lastMessageTime > 4000)) {
+                updateStateToDisconnected("WAIT");
+            }
+        }, 1000);
+
+        connect();
+    </script>
+</body>
+</html>

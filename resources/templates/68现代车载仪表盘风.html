@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { background: transparent; overflow: hidden; margin: 0; padding: 20px; }
+        
+        /* 垂直微型仪表盘卡片 */
+        .container { 
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Segoe UI', -apple-system, sans-serif;
+            width: 130px;
+            height: 130px;
+            background: #111216;
+            border-radius: 30px;
+            border: 2px solid #22252e;
+            position: relative;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            overflow: hidden;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        /* 卡片顶部的精致小灯圈 */
+        .heart { 
+            width: 6px; height: 6px; border-radius: 50%;
+            position: absolute; top: 14px;
+            background: #00ff88;
+            box-shadow: 0 0 10px #00ff88;
+            will-change: transform;
+        }
+        
+        /* 核心心率大字（居中放大） */
+        #bpm { 
+            font-size: 46px; font-weight: 800; color: #ffffff; 
+            line-height: 1; margin-top: 15px; letter-spacing: -1px;
+        }
+        
+        /* 最高值平铺在卡片底部 */
+        .max-info { 
+            display: flex; flex-direction: row; align-items: center; 
+            margin-top: 8px; font-size: 11px; color: #666a77;
+        }
+        .max-label { font-weight: bold; text-transform: uppercase; margin-right: 4px; }
+        #maxBpm { font-weight: bold; color: #a0a5b5; }
+        
+        /* 仪表盘背景能量场动画 */
+        @keyframes ring-pulse { 0% { opacity: 0.3; transform: scale(1); } 50% { opacity: 0.6; transform: scale(1.1); } 100% { opacity: 0.3; transform: scale(1); } }
+        @keyframes danger-alarm { 0%, 100% { background: #111216; } 50% { background: #2a080c; border-color: #ff3344; } }
+        @keyframes indicator-flash { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
+
+        /* 状态样式 */
+        .status-normal .heart { background: #00ff88; box-shadow: 0 0 12px #00ff88; animation: indicator-flash 0.8s infinite; }
+        
+        .status-warning { border-color: #ffaa00; }
+        .status-warning .heart { background: #ffaa00; box-shadow: 0 0 12px #ffaa00; animation: indicator-flash 0.4s infinite; }
+        .status-warning #bpm { color: #ffaa00; }
+        
+        .status-danger { animation: danger-alarm 0.4s infinite; }
+        .status-danger .heart { background: #ff3344; box-shadow: 0 0 16px #ff3344; animation: indicator-flash 0.2s infinite; }
+        .status-danger #bpm { color: #ff3344; transform: scale(1.05); }
+
+        /* 断开连接 */
+        .disconnected { background: #161719 !important; border-color: #252629 !important; box-shadow: none !important; }
+        .disconnected .heart { background: #444 !important; box-shadow: none !important; animation: none !important; }
+        .disconnected #bpm { color: #444a59; font-size: 32px; }
+        .disconnected #maxBpm { color: #444a59; }
+    </style>
+</head>
+<body>
+    <div id="wrapper" class="container disconnected">
+        <span id="heartIcon" class="heart"></span>
+        <span id="bpm">--</span>
+        <div class="max-info">
+            <span class="max-label">MAX:</span>
+            <span id="maxBpm">--</span>
+        </div>
+    </div>
+
+    <script>
+        let socket = null;
+        let lastMessageTime = Date.now();
+        let currentStatus = 'disconnected'; 
+        let currentHR = '--';
+        let currentMax = '--';
+
+        const bpmEl = document.getElementById('bpm');
+        const maxEl = document.getElementById('maxBpm');
+        const wrapper = document.getElementById('wrapper');
+
+        function connect() {
+            if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+            socket = new WebSocket('ws://127.0.0.1:8001');
+
+            socket.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    lastMessageTime = Date.now();
+
+                    if (data.connected && data.heart_rate > 0) {
+                        const hr = data.heart_rate;
+                        const max = data.max_heart_rate || '--';
+
+                        if (hr !== currentHR) {
+                            bpmEl.innerText = hr;
+                            currentHR = hr;
+                        }
+                        if (max !== currentMax) {
+                            maxEl.innerText = max;
+                            currentMax = max;
+                        }
+
+                        let targetStatus = 'status-normal';
+                        if (hr >= 120) targetStatus = 'status-danger';
+                        else if (hr >= 100) targetStatus = 'status-warning';
+
+                        if (currentStatus !== targetStatus) {
+                            wrapper.classList.remove('disconnected', 'status-normal', 'status-warning', 'status-danger');
+                            wrapper.classList.add(targetStatus);
+                            currentStatus = targetStatus;
+                        }
+                    } else {
+                        updateStateToDisconnected("OFF");
+                    }
+                } catch (e) { console.error("Data error:", e); }
+            };
+
+            socket.onclose = () => { updateStateToDisconnected("LOST"); setTimeout(connect, 5000); };
+            socket.onerror = () => { socket.close(); };
+        }
+
+        function updateStateToDisconnected(text) {
+            if (currentStatus !== 'disconnected') {
+                wrapper.className = 'container disconnected';
+                bpmEl.innerText = text;
+                maxEl.innerText = '--';
+                currentStatus = 'disconnected';
+                currentHR = '--';
+                currentMax = '--';
+            }
+        }
+
+        setInterval(() => {
+            if (currentStatus !== 'disconnected' && (Date.now() - lastMessageTime > 4000)) {
+                updateStateToDisconnected("WAIT");
+            }
+        }, 1000);
+
+        connect();
+    </script>
+</body>
+</html>

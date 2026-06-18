@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { background: transparent; overflow: hidden; margin: 0; padding: 20px; }
+        
+        /* 解构艺术无框舞台 */
+        .container { 
+            display: inline-flex;
+            align-items: flex-end;
+            background: transparent;
+            font-family: 'Impact', 'Arial Black', sans-serif;
+            position: relative;
+            line-height: 0.85;
+        }
+        
+        /* 极端粗大的核心数字 */
+        #bpm { 
+            font-size: 85px; font-weight: 900; color: #ffffff; 
+            letter-spacing: -3px; min-width: 140px; text-align: left;
+            transition: color 0.3s, letter-spacing 0.3s;
+        }
+        
+        /* 嵌套在数字边缘的极限值层级 */
+        .typo-overlay {
+            display: flex; flex-direction: column;
+            margin-left: -10px; padding-bottom: 5px;
+        }
+        .typo-tag { font-size: 11px; color: rgba(255,255,255,0.25); font-weight: bold; letter-spacing: 0.5px; font-family: Arial; }
+        #maxBpm { 
+            font-size: 28px; color: rgba(255,255,255,0.5); font-weight: 900; 
+            margin-top: -2px; letter-spacing: -0.5px;
+        }
+
+        /* 极端超载时的字母间距抽搐拉伸 */
+        @keyframes typo-stretch {
+            0%, 100% { letter-spacing: -3px; filter: brightness(1); }
+            50% { letter-spacing: 0px; filter: brightness(1.3); }
+        }
+
+        /* 状态控制：由冷白转高危 */
+        .status-normal {}
+        
+        .status-warning #bpm { color: #00ff66; text-shadow: 0 0 10px rgba(0,255,102,0.2); }
+        .status-warning #maxBpm { color: rgba(0,255,102,0.5); }
+
+        .status-danger #bpm { 
+            color: #ff0033; 
+            animation: typo-stretch 0.25s infinite ease-in-out;
+        }
+        .status-danger #maxBpm { color: #ff0033; }
+
+        /* 系统坠毁（数字碎裂感） */
+        .disconnected #bpm { color: rgba(255,255,255,0.04); font-size: 50px; letter-spacing: -1px; animation: none !important; }
+        .disconnected #maxBpm { color: rgba(255,255,255,0.02); }
+        .disconnected .typo-tag { color: rgba(255,255,255,0.01); }
+    </style>
+</head>
+<body>
+    <div id="wrapper" class="container disconnected">
+        <span id="bpm">--</span>
+        <div class="typo-overlay">
+            <span class="typo-tag">PEAK</span>
+            <span id="maxBpm">--</span>
+        </div>
+    </div>
+
+    <script>
+        let socket = null;
+        let lastMessageTime = Date.now();
+        let currentStatus = 'disconnected'; 
+        let currentHR = '--';
+        let currentMax = '--';
+
+        const bpmEl = document.getElementById('bpm');
+        const maxEl = document.getElementById('maxBpm');
+        const wrapper = document.getElementById('wrapper');
+
+        function connect() {
+            if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+            socket = new WebSocket('ws://127.0.0.1:8001');
+
+            socket.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    lastMessageTime = Date.now();
+
+                    if (data.connected && data.heart_rate > 0) {
+                        const hr = data.heart_rate;
+                        const max = data.max_heart_rate || '--';
+
+                        if (hr !== currentHR) {
+                            bpmEl.innerText = hr;
+                            currentHR = hr;
+                        }
+                        if (max !== currentMax) {
+                            maxEl.innerText = max;
+                            currentMax = max;
+                        }
+
+                        let targetStatus = 'status-normal';
+                        if (hr >= 120) targetStatus = 'status-danger';
+                        else if (hr >= 100) targetStatus = 'status-warning';
+
+                        if (currentStatus !== targetStatus) {
+                            wrapper.classList.remove('disconnected', 'status-normal', 'status-warning', 'status-danger');
+                            wrapper.classList.add(targetStatus);
+                            currentStatus = targetStatus;
+                        }
+                    } else {
+                        updateStateToDisconnected("OFF");
+                    }
+                } catch (e) { console.error("Data error:", e); }
+            };
+
+            socket.onclose = () => { updateStateToDisconnected("LOST"); setTimeout(connect, 5000); };
+            socket.onerror = () => { socket.close(); };
+        }
+
+        function updateStateToDisconnected(text) {
+            if (currentStatus !== 'disconnected') {
+                wrapper.className = 'container disconnected';
+                bpmEl.innerText = text;
+                maxEl.innerText = '--';
+                currentStatus = 'disconnected';
+                currentHR = '--';
+                currentMax = '--';
+            }
+        }
+
+        setInterval(() => {
+            if (currentStatus !== 'disconnected' && (Date.now() - lastMessageTime > 4000)) {
+                updateStateToDisconnected("WAIT");
+            }
+        }, 1000);
+
+        connect();
+    </script>
+</body>
+</html>

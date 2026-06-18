@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { background: transparent; overflow: hidden; margin: 0; padding: 20px; }
+        
+        /* 碳纤维质感合金外壳 */
+        .container { 
+            display: flex;
+            flex-direction: column;
+            width: 220px;
+            background: #0d0e10;
+            border: 2px solid #1a1c23;
+            padding: 12px;
+            border-radius: 2px;
+            box-shadow: inset 0 0 20px rgba(0,0,0,0.8), 0 8px 25px rgba(0,0,0,0.5);
+            font-family: 'Arial Black', sans-serif;
+        }
+        
+        /* 顶部动态马力灯条 */
+        .rpm-bar {
+            display: flex; gap: 4px; width: 100%; height: 8px; margin-bottom: 10px;
+        }
+        .rpm-node {
+            flex-grow: 1; height: 100%; background: #1c1e24; transition: all 0.2s;
+        }
+
+        /* 下部核心数据对齐 */
+        .main-data {
+            display: flex; justify-content: space-between; align-items: flex-end;
+        }
+
+        .bpm-box { display: flex; flex-direction: column; line-height: 1; }
+        .tag { font-size: 9px; color: #434956; font-weight: bold; letter-spacing: 0.5px; margin-bottom: 4px; }
+        #bpm { font-size: 44px; font-weight: 900; color: #ffffff; font-style: italic; }
+        
+        .max-box { display: flex; flex-direction: column; align-items: flex-end; line-height: 1; }
+        #maxBpm { font-size: 20px; color: #ff003c; font-weight: bold; font-style: italic; }
+
+        /* 引擎爆表剧烈震动动效 */
+        @keyframes engine-shake {
+            0% { transform: translate(0, 0) skewX(-6deg); }
+            20% { transform: translate(-1px, 1px) skewX(-6deg); }
+            40% { transform: translate(-1px, -1px) skewX(-6deg); }
+            60% { transform: translate(1px, 1px) skewX(-6deg); }
+            80% { transform: translate(1px, -1px) skewX(-6deg); }
+            100% { transform: translate(0, 0) skewX(-6deg); }
+        }
+
+        /* 状态逻辑对应的灯条亮起数量与色彩 */
+        .status-normal { transform: skewX(-6deg); }
+        .status-normal .rpm-node:nth-child(-n+4) { background: #550414; } /* 基础暗红暗示 */
+        .status-normal .rpm-node:nth-child(-n+2) { background: #ff003c; box-shadow: 0 0 6px #ff003c; }
+
+        .status-warning { transform: skewX(-6deg); border-color: #cc4400; }
+        .status-warning .rpm-node:nth-child(-n+6) { background: #ff5500; box-shadow: 0 0 6px #ff5500; }
+        .status-warning #bpm { color: #ff5500; }
+
+        .status-danger { border-color: #ff003c; background: #170306; animation: engine-shake 0.15s infinite linear; }
+        .status-danger .rpm-node { background: #ff003c !important; box-shadow: 0 0 8px #ff003c; }
+        .status-danger #bpm { color: #ff003c; text-shadow: 0 0 10px rgba(255,0,60,0.5); }
+
+        /* 断开连接（引擎彻底熄火） */
+        .disconnected { border-color: #222 !important; background: #0a0a0c !important; transform: none !important; animation: none !important; }
+        .disconnected .rpm-node { background: #141416 !important; box-shadow: none !important; }
+        .disconnected #bpm { color: #2d3038; font-size: 30px; font-style: normal; }
+        .disconnected #maxBpm { color: #2d3038; font-style: normal; }
+        .disconnected .tag { color: #202229; }
+    </style>
+</head>
+<body>
+    <div id="wrapper" class="container disconnected">
+        <div class="rpm-bar">
+            <div class="rpm-node"></div>
+            <div class="rpm-node"></div>
+            <div class="rpm-node"></div>
+            <div class="rpm-node"></div>
+            <div class="rpm-node"></div>
+            <div class="rpm-node"></div>
+            <div class="rpm-node"></div>
+        </div>
+        <div class="main-data">
+            <div class="bpm-box">
+                <span class="tag">ENGINE RPM</span>
+                <span id="bpm">--</span>
+            </div>
+            <div class="max-box">
+                <span class="tag">MAX RECORD</span>
+                <span id="maxBpm">--</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let socket = null;
+        let lastMessageTime = Date.now();
+        let currentStatus = 'disconnected'; 
+        let currentHR = '--';
+        let currentMax = '--';
+
+        const bpmEl = document.getElementById('bpm');
+        const maxEl = document.getElementById('maxBpm');
+        const wrapper = document.getElementById('wrapper');
+
+        function connect() {
+            if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+            socket = new WebSocket('ws://127.0.0.1:8001');
+
+            socket.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    lastMessageTime = Date.now();
+
+                    if (data.connected && data.heart_rate > 0) {
+                        const hr = data.heart_rate;
+                        const max = data.max_heart_rate || '--';
+
+                        if (hr !== currentHR) {
+                            bpmEl.innerText = hr;
+                            currentHR = hr;
+                        }
+                        if (max !== currentMax) {
+                            maxEl.innerText = max;
+                            currentMax = max;
+                        }
+
+                        let targetStatus = 'status-normal';
+                        if (hr >= 120) targetStatus = 'status-danger';
+                        else if (hr >= 100) targetStatus = 'status-warning';
+
+                        if (currentStatus !== targetStatus) {
+                            wrapper.classList.remove('disconnected', 'status-normal', 'status-warning', 'status-danger');
+                            wrapper.classList.add(targetStatus);
+                            currentStatus = targetStatus;
+                        }
+                    } else {
+                        updateStateToDisconnected("OFF");
+                    }
+                } catch (e) { console.error("Data error:", e); }
+            };
+
+            socket.onclose = () => { updateStateToDisconnected("LOST"); setTimeout(connect, 5000); };
+            socket.onerror = () => { socket.close(); };
+        }
+
+        function updateStateToDisconnected(text) {
+            if (currentStatus !== 'disconnected') {
+                wrapper.className = 'container disconnected';
+                bpmEl.innerText = text;
+                maxEl.innerText = '--';
+                currentStatus = 'disconnected';
+                currentHR = '--';
+                currentMax = '--';
+            }
+        }
+
+        setInterval(() => {
+            if (currentStatus !== 'disconnected' && (Date.now() - lastMessageTime > 4000)) {
+                updateStateToDisconnected("WAIT");
+            }
+        }, 1000);
+
+        connect();
+    </script>
+</body>
+</html>

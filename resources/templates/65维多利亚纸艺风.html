@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { background: transparent; overflow: hidden; margin: 0; padding: 20px; }
+        
+        /* 古典羊皮烫金丝带 */
+        .container { 
+            display: inline-flex;
+            align-items: center;
+            font-family: 'Georgia', 'Times New Roman', serif;
+            background: #fbf6ec; /* 象牙纸张色 */
+            padding: 8px 24px;
+            border: 2px solid #d4af37; /* 皇家鎏金 */
+            border-radius: 4px;
+            box-shadow: 0 4px 15px rgba(212,175,55,0.15), 0 2px 4px rgba(0,0,0,0.1);
+            position: relative;
+            transition: all 0.5s ease;
+        }
+
+        /* 优雅的丝带燕尾裁切（纯CSS实现） */
+        .container::before, .container::after {
+            content: ''; position: absolute; top: -2px; width: 0; height: 0; border-style: solid;
+        }
+        .container::before { left: -14px; border-width: 22px 14px 22px 0; border-color: transparent #fbf6ec transparent transparent; filter: drop-shadow(-2px 0 0 #d4af37); }
+        
+        /* 传统古典古典纹饰符号 */
+        .heart { margin-right: 15px; font-size: 26px; color: #b8860b; font-style: normal; }
+        
+        /* 典雅的罗马数字体 */
+        #bpm { 
+            font-size: 38px; font-weight: bold; color: #3a352a; 
+            font-style: italic; min-width: 70px; text-align: center;
+        }
+        
+        /* 竖线分隔与右侧数据 */
+        .max-info { 
+            display: flex; flex-direction: column; align-items: flex-start; 
+            margin-left: 15px; padding-left: 15px; border-left: 1px solid rgba(214,175,55,0.4);
+        }
+        .max-label { font-size: 9px; color: #8a8167; font-weight: bold; letter-spacing: 1px; }
+        #maxBpm { font-size: 16px; color: #5c533c; font-weight: bold; margin-top: 2px; }
+        
+        /* 宫廷古典舒缓呼吸动画 */
+        @keyframes royal-pulse { 
+            0%, 100% { transform: scale(1); filter: brightness(1); } 
+            50% { transform: scale(1.06); filter: brightness(1.05); } 
+        }
+
+        /* 状态演变 */
+        .status-normal { animation: royal-pulse 1.4s infinite ease-in-out; }
+        
+        .status-warning { 
+            background: #fff3e6; border-color: #e67e22; 
+            animation: royal-pulse 0.8s infinite ease-in-out;
+        }
+        .status-warning #bpm, .status-warning #maxBpm { color: #d35400; }
+        .status-warning .heart { color: #e67e22; }
+
+        .status-danger { 
+            background: #fde8e8; border-color: #c0392b;
+            animation: royal-pulse 0.4s infinite ease-in-out;
+            box-shadow: 0 4px 20px rgba(192,57,43,0.3);
+        }
+        .status-danger #bpm, .status-danger #maxBpm { color: #962d22; }
+        .status-danger .heart { color: #c0392b; }
+
+        /* 断开连接（褪色陈旧纸张） */
+        .disconnected { background: #eaeaea !important; border-color: #999 !important; box-shadow: none !important; }
+        .disconnected::before { border-color: transparent #eaeaea transparent transparent !important; }
+        .disconnected .heart, .disconnected #bpm, .disconnected #maxBpm { color: #888 !important; }
+        .disconnected #bpm { font-size: 24px; font-style: normal; }
+    </style>
+</head>
+<body>
+    <div id="wrapper" class="container disconnected">
+        <span id="heartIcon" class="heart">❦</span>
+        <span id="bpm">--</span>
+        <div class="max-info">
+            <span class="max-label">MAXIMUM</span>
+            <span id="maxBpm">--</span>
+        </div>
+    </div>
+
+    <script>
+        let socket = null;
+        let lastMessageTime = Date.now();
+        let currentStatus = 'disconnected'; 
+        let currentHR = '--';
+        let currentMax = '--';
+
+        const bpmEl = document.getElementById('bpm');
+        const maxEl = document.getElementById('maxBpm');
+        const wrapper = document.getElementById('wrapper');
+
+        function connect() {
+            if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+            socket = new WebSocket('ws://127.0.0.1:8001');
+
+            socket.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    lastMessageTime = Date.now();
+
+                    if (data.connected && data.heart_rate > 0) {
+                        const hr = data.heart_rate;
+                        const max = data.max_heart_rate || '--';
+
+                        if (hr !== currentHR) {
+                            bpmEl.innerText = hr;
+                            currentHR = hr;
+                        }
+                        if (max !== currentMax) {
+                            maxEl.innerText = max;
+                            currentMax = max;
+                        }
+
+                        let targetStatus = 'status-normal';
+                        if (hr >= 120) targetStatus = 'status-danger';
+                        else if (hr >= 100) targetStatus = 'status-warning';
+
+                        if (currentStatus !== targetStatus) {
+                            wrapper.classList.remove('disconnected', 'status-normal', 'status-warning', 'status-danger');
+                            wrapper.classList.add(targetStatus);
+                            currentStatus = targetStatus;
+                        }
+                    } else {
+                        updateStateToDisconnected("OFF");
+                    }
+                } catch (e) { console.error("Data error:", e); }
+            };
+
+            socket.onclose = () => { updateStateToDisconnected("LOST"); setTimeout(connect, 5000); };
+            socket.onerror = () => { socket.close(); };
+        }
+
+        function updateStateToDisconnected(text) {
+            if (currentStatus !== 'disconnected') {
+                wrapper.className = 'container disconnected';
+                bpmEl.innerText = text;
+                maxEl.innerText = '--';
+                currentStatus = 'disconnected';
+                currentHR = '--';
+                currentMax = '--';
+            }
+        }
+
+        setInterval(() => {
+            if (currentStatus !== 'disconnected' && (Date.now() - lastMessageTime > 4000)) {
+                updateStateToDisconnected("WAIT");
+            }
+        }, 1000);
+
+        connect();
+    </script>
+</body>
+</html>

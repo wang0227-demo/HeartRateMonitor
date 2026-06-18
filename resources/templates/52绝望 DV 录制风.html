@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { background: transparent; overflow: hidden; margin: 0; padding: 20px; }
+        
+        /* DV 镜头四角对焦框 */
+        .container { 
+            display: inline-flex;
+            align-items: center;
+            background: rgba(0, 0, 0, 0.4);
+            padding: 10px 24px;
+            font-family: 'Courier New', Courier, monospace;
+            position: relative;
+            color: var(--horror-color, #00ff66);
+            transition: all 0.3s;
+        }
+
+        /* 纯 CSS 绘制旧式 DV 镜头四个裁切角 */
+        .container::before {
+            content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+            border: 1px solid var(--horror-color, #00ff66);
+            clip-path: polygon(
+                0 0, 8px 0, 8px 1px, 1px 1px, 1px 8px, 0 8px,
+                100% 0, calc(100% - 8px) 0, calc(100% - 8px) 1px, calc(100% - 1px) 1px, calc(100% - 1px) 8px, 100% 8px,
+                100% 100%, calc(100% - 8px) 100%, calc(100% - 8px) calc(100% - 1px), calc(100% - 1px) calc(100% - 1px), calc(100% - 1px) calc(100% - 8px), 100% calc(100% - 8px),
+                0 100%, 8px 100%, 8px calc(100% - 1px), 1px calc(100% - 1px), 1px calc(100% - 8px), 0 calc(100% - 8px)
+            );
+        }
+
+        /* 仿旧式液晶屏显示字 */
+        #bpm { 
+            font-size: 46px; font-weight: bold; 
+            color: var(--horror-color, #00ff66); line-height: 1;
+            min-width: 80px; text-align: center;
+            text-shadow: 0 0 4px var(--horror-color, #00ff66);
+        }
+        
+        /* 侧边摄像机参数区 */
+        .cam-meta { 
+            display: flex; flex-direction: column; 
+            margin-left: 16px; border-left: 1px solid var(--horror-color, #00ff66); 
+            padding-left: 14px; line-height: 1.2;
+        }
+        .cam-status { font-size: 8px; font-weight: bold; letter-spacing: 1px; }
+        #maxBpm { 
+            font-size: 16px; font-weight: bold; margin-top: 3px;
+        }
+        
+        /* 恐怖电影常见的录制红点剧烈闪烁 */
+        @keyframes rec-blink {
+            0%, 49% { opacity: 1; filter: drop-shadow(0 0 5px #ff0000); }
+            50%, 100% { opacity: 0; }
+        }
+
+        /* 状态变色（幽绿 -> 惨黄 -> 猩红暴走） */
+        .status-normal { --horror-color: #00ff66; }
+        .status-normal .cam-status::before { content: 'STBLE'; }
+        
+        .status-warning { --horror-color: #ffaa00; }
+        .status-warning .cam-status::before { content: 'WARN'; }
+
+        .status-danger { --horror-color: #ff0033; background: rgba(30, 0, 5, 0.6); }
+        .status-danger .cam-status::before { content: '• REC'; animation: rec-blink 0.5s infinite; color: #ff0033; }
+        .status-danger #bpm { animation: rec-blink 0.8s infinite alternate; }
+
+        /* 系统断电（死机全黑） */
+        .disconnected { background: rgba(0,0,0,0.8) !important; color: #1a1a1a !important; }
+        .disconnected::before { border-color: #1a1a1a !important; }
+        .disconnected #bpm { color: #1a1a1a; text-shadow: none; font-size: 30px; animation: none !important; }
+        .disconnected .cam-meta { border-left-color: #1a1a1a; }
+        .disconnected .cam-status::before { content: 'LOST'; }
+        .disconnected #maxBpm { color: #1a1a1a; }
+    </style>
+</head>
+<body>
+    <div id="wrapper" class="container disconnected">
+        <span id="bpm">--</span>
+        <div class="cam-meta">
+            <span class="cam-status"></span>
+            <span id="maxBpm">--</span>
+        </div>
+    </div>
+
+    <script>
+        let socket = null;
+        let lastMessageTime = Date.now();
+        let currentStatus = 'disconnected'; 
+        let currentHR = '--';
+        let currentMax = '--';
+
+        const bpmEl = document.getElementById('bpm');
+        const maxEl = document.getElementById('maxBpm');
+        const wrapper = document.getElementById('wrapper');
+
+        function connect() {
+            if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+            socket = new WebSocket('ws://127.0.0.1:8001');
+
+            socket.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    lastMessageTime = Date.now();
+
+                    if (data.connected && data.heart_rate > 0) {
+                        const hr = data.heart_rate;
+                        const max = data.max_heart_rate || '--';
+
+                        if (hr !== currentHR) {
+                            bpmEl.innerText = hr;
+                            currentHR = hr;
+                        }
+                        if (max !== currentMax) {
+                            maxEl.innerText = max;
+                            currentMax = max;
+                        }
+
+                        let targetStatus = 'status-normal';
+                        if (hr >= 120) targetStatus = 'status-danger';
+                        else if (hr >= 100) targetStatus = 'status-warning';
+
+                        if (currentStatus !== targetStatus) {
+                            wrapper.classList.remove('disconnected', 'status-normal', 'status-warning', 'status-danger');
+                            wrapper.classList.add(targetStatus);
+                            currentStatus = targetStatus;
+                        }
+                    } else {
+                        updateStateToDisconnected("OFF");
+                    }
+                } catch (e) { console.error("Data error:", e); }
+            };
+
+            socket.onclose = () => { updateStateToDisconnected("LOST"); setTimeout(connect, 5000); };
+            socket.onerror = () => { socket.close(); };
+        }
+
+        function updateStateToDisconnected(text) {
+            if (currentStatus !== 'disconnected') {
+                wrapper.className = 'container disconnected';
+                bpmEl.innerText = text;
+                maxEl.innerText = '--';
+                currentStatus = 'disconnected';
+                currentHR = '--';
+                currentMax = '--';
+            }
+        }
+
+        setInterval(() => {
+            if (currentStatus !== 'disconnected' && (Date.now() - lastMessageTime > 4000)) {
+                updateStateToDisconnected("WAIT");
+            }
+        }, 1000);
+
+        connect();
+    </script>
+</body>
+</html>

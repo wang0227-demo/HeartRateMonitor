@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { background: transparent; overflow: hidden; margin: 0; padding: 20px; }
+        
+        /* 战术雷达舞台 */
+        .container { 
+            display: inline-flex;
+            align-items: center;
+            background: rgba(10, 14, 18, 0.75);
+            padding: 8px 18px;
+            font-family: 'Eurostile', 'Arial Black', sans-serif;
+            border-bottom: 2px solid var(--fps-theme, #00ffcc);
+            position: relative;
+        }
+
+        /* 纯 CSS 绘制左侧准星 */
+        .crosshair-left {
+            width: 12px; height: 12px; border: 1px solid var(--fps-theme, #00ffcc);
+            border-radius: 50%; margin-right: 14px; position: relative;
+        }
+        .crosshair-left::before, .crosshair-left::after {
+            content: ''; position: absolute; background: var(--fps-theme, #00ffcc);
+        }
+        .crosshair-left::before { top: 50%; left: -3px; width: 18px; height: 1px; transform: translateY(-50%); }
+        .crosshair-left::after { left: 50%; top: -3px; height: 18px; width: 1px; transform: translateX(-50%); }
+        
+        /* 主数值：硬核加粗倾斜字 */
+        #bpm { 
+            font-size: 40px; font-weight: 900; color: #ffffff; line-height: 1;
+            min-width: 75px; text-align: center; font-style: italic;
+            letter-spacing: -0.5px;
+        }
+        
+        /* 战术小单元 */
+        .fps-meta { display: flex; flex-direction: column; margin-left: 14px; line-height: 1.1; }
+        .fps-tag { font-size: 7px; color: rgba(255,255,255,0.3); font-weight: bold; letter-spacing: 1px; }
+        #maxBpm { font-size: 16px; color: rgba(255,255,255,0.85); font-weight: bold; font-style: italic; margin-top: 2px; }
+
+        /* 极度对枪危机时的剧烈抖动 */
+        @keyframes cross-shiver {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); filter: brightness(1.3); }
+        }
+
+        /* 状态树 */
+        .status-normal { --fps-theme: #00ffcc; }
+        
+        .status-warning { --fps-theme: #ffbb00; }
+        .status-warning #bpm { color: #ffbb00; }
+
+        .status-danger { --fps-theme: #ff3344; }
+        .status-danger #bpm { color: #ff3344; }
+        .status-danger .crosshair-left { animation: cross-shiver 0.2s infinite; }
+
+        /* 系统离线（瞄准镜关闭） */
+        .disconnected { border-bottom-color: #1a1e22 !important; background: rgba(5,5,5,0.6) !important; }
+        .disconnected .crosshair-left { border-color: #1a1e22 !important; animation: none !important; }
+        .disconnected .crosshair-left::before, .disconnected .crosshair-left::after { background: #1a1e22 !important; }
+        .disconnected #bpm { color: #22272c; font-size: 26px; font-style: normal; }
+        .disconnected #maxBpm { color: #1a1e22; font-style: normal; }
+        .disconnected .fps-tag { color: #15181b; }
+    </style>
+</head>
+<body>
+    <div id="wrapper" class="container disconnected">
+        <div class="crosshair-left"></div>
+        <span id="bpm">--</span>
+        <div class="fps-meta">
+            <span class="fps-tag">MAX VIT</span>
+            <span id="maxBpm">--</span>
+        </div>
+    </div>
+
+    <script>
+        let socket = null;
+        let lastMessageTime = Date.now();
+        let currentStatus = 'disconnected'; 
+        let currentHR = '--';
+        let currentMax = '--';
+
+        const bpmEl = document.getElementById('bpm');
+        const maxEl = document.getElementById('maxBpm');
+        const wrapper = document.getElementById('wrapper');
+
+        function connect() {
+            if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+            socket = new WebSocket('ws://127.0.0.1:8001');
+
+            socket.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    lastMessageTime = Date.now();
+
+                    if (data.connected && data.heart_rate > 0) {
+                        const hr = data.heart_rate;
+                        const max = data.max_heart_rate || '--';
+
+                        if (hr !== currentHR) {
+                            bpmEl.innerText = hr;
+                            currentHR = hr;
+                        }
+                        if (max !== currentMax) {
+                            maxEl.innerText = max;
+                            currentMax = max;
+                        }
+
+                        let targetStatus = 'status-normal';
+                        if (hr >= 120) targetStatus = 'status-danger';
+                        else if (hr >= 100) targetStatus = 'status-warning';
+
+                        if (currentStatus !== targetStatus) {
+                            wrapper.classList.remove('disconnected', 'status-normal', 'status-warning', 'status-danger');
+                            wrapper.classList.add(targetStatus);
+                            currentStatus = targetStatus;
+                        }
+                    } else {
+                        updateStateToDisconnected("OFF");
+                    }
+                } catch (e) { console.error("Data error:", e); }
+            };
+
+            socket.onclose = () => { updateStateToDisconnected("LOST"); setTimeout(connect, 5000); };
+            socket.onerror = () => { socket.close(); };
+        }
+
+        function updateStateToDisconnected(text) {
+            if (currentStatus !== 'disconnected') {
+                wrapper.className = 'container disconnected';
+                bpmEl.innerText = text;
+                maxEl.innerText = '--';
+                currentStatus = 'disconnected';
+                currentHR = '--';
+                currentMax = '--';
+            }
+        }
+
+        setInterval(() => {
+            if (currentStatus !== 'disconnected' && (Date.now() - lastMessageTime > 4000)) {
+                updateStateToDisconnected("WAIT");
+            }
+        }, 1000);
+
+        connect();
+    </script>
+</body>
+</html>

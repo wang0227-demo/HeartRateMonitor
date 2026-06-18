@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { background: transparent; overflow: hidden; margin: 0; padding: 20px; }
+        
+        /* 极简科技容器 */
+        .container { 
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-family: 'SF Pro Display', 'Roboto', sans-serif;
+            width: 120px;
+            height: 120px;
+            border-radius: 16px;
+            background: #ffffff;
+            border: 1px solid #e0e0e0;
+            position: relative;
+            box-sizing: border-box;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            transition: all 0.2s ease;
+        }
+
+        /* 极简装饰线 */
+        .container::before {
+            content: ''; position: absolute; top: 0; left: 50%;
+            width: 30px; height: 3px;
+            background: var(--hud-color, #2196f3);
+            transform: translateX(-50%);
+            border-radius: 3px;
+            opacity: 0.8;
+        }
+        
+        /* 心率主数值 */
+        #bpm { 
+            font-size: 40px; font-weight: 500; 
+            color: var(--hud-color, #2196f3);
+            line-height: 1; margin-top: 8px;
+        }
+        
+        /* 顶部峰值 */
+        .max-info { position: absolute; top: 12px; text-align: center; width: 100%; }
+        .max-label { font-size: 8px; color: #999; display: block; }
+        #maxBpm { font-size: 11px; color: #666; font-weight: 500; }
+        
+        /* 底部标签 */
+        .hud-tag { position: absolute; bottom: 12px; font-size: 10px; color: #999; letter-spacing: 0.5px; }
+
+        /* 动画定义 */
+        @keyframes alert-pulse { 0% { transform: scale(1); } 50% { transform: scale(1.02); } 100% { transform: scale(1); } }
+
+        /* 状态映射 */
+        .status-normal { --hud-color: #2196f3; }
+        
+        .status-warning { --hud-color: #ff9800; }
+        .status-warning { box-shadow: 0 4px 15px rgba(255,152,0,0.15); }
+        
+        .status-danger { --hud-color: #f44336; animation: alert-pulse 0.6s infinite; }
+        .status-danger { box-shadow: 0 4px 15px rgba(244,67,54,0.2); }
+
+        /* 断开连接 */
+        .disconnected { border: 1px solid #eee !important; background: #fafafa !important; box-shadow: none !important; }
+        .disconnected::before { background: #ddd !important; }
+        .disconnected #bpm { color: #ccc; font-size: 26px; }
+        .disconnected #maxBpm { color: #ccc; }
+        .disconnected .max-label { color: #eee; }
+        .disconnected .hud-tag { color: #ccc; }
+    </style>
+</head>
+<body>
+    <div id="wrapper" class="container disconnected">
+        <div class="max-info">
+            <span class="max-label">峰值心率</span>
+            <span id="maxBpm">--</span>
+        </div>
+        <span id="bpm">--</span>
+        <span class="hud-tag">心率监测</span>
+    </div>
+
+    <script>
+        let socket = null;
+        let lastMessageTime = Date.now();
+        let currentStatus = 'disconnected'; 
+        let currentHR = '--';
+        let currentMax = '--';
+
+        const bpmEl = document.getElementById('bpm');
+        const maxEl = document.getElementById('maxBpm');
+        const wrapper = document.getElementById('wrapper');
+
+        function connect() {
+            if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+            socket = new WebSocket('ws://127.0.0.1:8001');
+
+            socket.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    lastMessageTime = Date.now();
+
+                    if (data.connected && data.heart_rate > 0) {
+                        const hr = data.heart_rate;
+                        const max = data.max_heart_rate || '--';
+
+                        if (hr !== currentHR) {
+                            bpmEl.innerText = hr;
+                            currentHR = hr;
+                        }
+                        if (max !== currentMax) {
+                            maxEl.innerText = max;
+                            currentMax = max;
+                        }
+
+                        let targetStatus = 'status-normal';
+                        if (hr >= 120) targetStatus = 'status-danger';
+                        else if (hr >= 100) targetStatus = 'status-warning';
+
+                        if (currentStatus !== targetStatus) {
+                            wrapper.classList.remove('disconnected', 'status-normal', 'status-warning', 'status-danger');
+                            wrapper.classList.add(targetStatus);
+                            currentStatus = targetStatus;
+                        }
+                    } else {
+                        updateStateToDisconnected("离线");
+                    }
+                } catch (e) { console.error("Data error:", e); }
+            };
+
+            socket.onclose = () => { updateStateToDisconnected("断开"); setTimeout(connect, 5000); };
+            socket.onerror = () => { socket.close(); };
+        }
+
+        function updateStateToDisconnected(text) {
+            if (currentStatus !== 'disconnected') {
+                wrapper.className = 'container disconnected';
+                bpmEl.innerText = text;
+                maxEl.innerText = '--';
+                currentStatus = 'disconnected';
+                currentHR = '--';
+                currentMax = '--';
+            }
+        }
+
+        setInterval(() => {
+            if (currentStatus !== 'disconnected' && (Date.now() - lastMessageTime > 4000)) {
+                updateStateToDisconnected("等待");
+            }
+        }, 1000);
+
+        connect();
+    </script>
+</body>
+</html>

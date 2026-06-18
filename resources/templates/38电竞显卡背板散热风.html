@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { background: transparent; overflow: hidden; margin: 0; padding: 20px; }
+        
+        /* 显卡合金金属背板 */
+        .container { 
+            display: inline-flex;
+            align-items: center;
+            background: linear-gradient(180deg, #16181d 0%, #0d0e11 100%);
+            border: 2px solid #22262f;
+            border-bottom: 4px solid var(--gpu-red, #ff003c);
+            padding: 12px 20px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.05);
+            font-family: 'Arial Black', -apple-system, sans-serif;
+            border-radius: 4px;
+        }
+        
+        /* 左侧主数值区 */
+        .bpm-block { display: flex; flex-direction: column; line-height: 1; }
+        .gpu-tag { font-size: 8px; color: #4b5261; font-weight: bold; letter-spacing: 1.5px; margin-bottom: 2px; }
+        #bpm { 
+            font-size: 46px; font-weight: 900; color: #ffffff; 
+            font-style: italic; min-width: 80px; text-align: left;
+        }
+        
+        /* 中间：最高值数据区 */
+        .max-block {
+            display: flex; flex-direction: column; line-height: 1; margin-left: 15px; margin-right: 18px;
+            border-left: 1px solid #1f232b; padding-left: 15px;
+        }
+        #maxBpm { font-size: 18px; color: var(--gpu-red, #ff003c); font-weight: bold; font-style: italic; margin-top: 4px; }
+        
+        /* 右侧：显卡超频导流格栅（流光鳞片） */
+        .fins-grille { display: flex; gap: 4px; }
+        .fin { 
+            width: 5px; height: 32px; background: #1c1f26; transform: skewX(-25deg); 
+            position: relative; overflow: hidden;
+        }
+        
+        /* 满载流光特效 */
+        @keyframes gpu-flow {
+            0% { top: 100%; }
+            100% { top: -100%; }
+        }
+
+        /* 状态判定 */
+        .status-normal { --gpu-red: #ff003c; }
+        .status-normal .fin:nth-child(-n+2) { background: #ff003c; box-shadow: 0 0 6px #ff003c; }
+        
+        .status-warning { --gpu-red: #ff6600; border-bottom-color: #ff6600; }
+        .status-warning .fin:nth-child(-n+4) { background: #ff6600; box-shadow: 0 0 6px #ff6600; }
+        .status-warning #bpm { color: #ff6600; }
+        
+        .status-danger { --gpu-red: #ff0000; border-bottom-color: #ff0000; }
+        .status-danger #bpm { color: #ff0000; text-shadow: 0 0 8px rgba(255,0,0,0.4); animation: gpu-shake 0.1s infinite; }
+        .status-danger .fin { background: #4a000e; }
+        .status-danger .fin::after {
+            content: ''; position: absolute; left: 0; width: 100%; height: 100%;
+            background: linear-gradient(to top, transparent, #ff0000, transparent);
+            animation: gpu-flow 0.5s infinite linear;
+        }
+        
+        @keyframes gpu-shake { 0%, 100% { transform: translateY(0) italic; } 50% { transform: translateY(-1px) italic; } }
+
+        /* 断开连接（硬件下线） */
+        .disconnected { border-color: #222 !important; border-bottom-color: #333 !important; background: #0f1012 !important; box-shadow: none !important; }
+        .disconnected #bpm { color: #2d313a; font-size: 32px; font-style: normal; }
+        .disconnected #maxBpm { color: #2d313a; font-style: normal; }
+        .disconnected .fin { background: #141518 !important; }
+        .disconnected .gpu-tag { color: #22252c; }
+    </style>
+</head>
+<body>
+    <div id="wrapper" class="container disconnected">
+        <div class="bpm-block">
+            <span class="gpu-tag">GPU CORE CLK</span>
+            <span id="bpm">--</span>
+        </div>
+        <div class="max-block">
+            <span class="gpu-tag">PEAK</span>
+            <span id="maxBpm">--</span>
+        </div>
+        <div class="fins-grille">
+            <div class="fin"></div>
+            <div class="fin"></div>
+            <div class="fin"></div>
+            <div class="fin"></div>
+            <div class="fin"></div>
+        </div>
+    </div>
+
+    <script>
+        let socket = null;
+        let lastMessageTime = Date.now();
+        let currentStatus = 'disconnected'; 
+        let currentHR = '--';
+        let currentMax = '--';
+
+        const bpmEl = document.getElementById('bpm');
+        const maxEl = document.getElementById('maxBpm');
+        const wrapper = document.getElementById('wrapper');
+
+        function connect() {
+            if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+            socket = new WebSocket('ws://127.0.0.1:8001');
+
+            socket.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    lastMessageTime = Date.now();
+
+                    if (data.connected && data.heart_rate > 0) {
+                        const hr = data.heart_rate;
+                        const max = data.max_heart_rate || '--';
+
+                        if (hr !== currentHR) {
+                            bpmEl.innerText = hr;
+                            currentHR = hr;
+                        }
+                        if (max !== currentMax) {
+                            maxEl.innerText = max;
+                            currentMax = max;
+                        }
+
+                        let targetStatus = 'status-normal';
+                        if (hr >= 120) targetStatus = 'status-danger';
+                        else if (hr >= 100) targetStatus = 'status-warning';
+
+                        if (currentStatus !== targetStatus) {
+                            wrapper.classList.remove('disconnected', 'status-normal', 'status-warning', 'status-danger');
+                            wrapper.classList.add(targetStatus);
+                            currentStatus = targetStatus;
+                        }
+                    } else {
+                        updateStateToDisconnected("OFF");
+                    }
+                } catch (e) { console.error("Data error:", e); }
+            };
+
+            socket.onclose = () => { updateStateToDisconnected("LOST"); setTimeout(connect, 5000); };
+            socket.onerror = () => { socket.close(); };
+        }
+
+        function updateStateToDisconnected(text) {
+            if (currentStatus !== 'disconnected') {
+                wrapper.className = 'container disconnected';
+                bpmEl.innerText = text;
+                maxEl.innerText = '--';
+                currentStatus = 'disconnected';
+                currentHR = '--';
+                currentMax = '--';
+            }
+        }
+
+        setInterval(() => {
+            if (currentStatus !== 'disconnected' && (Date.now() - lastMessageTime > 4000)) {
+                updateStateToDisconnected("WAIT");
+            }
+        }, 1000);
+
+        connect();
+    </script>
+</body>
+</html>

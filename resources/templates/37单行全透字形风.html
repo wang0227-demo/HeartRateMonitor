@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { background: transparent; overflow: hidden; margin: 0; padding: 20px; }
+        
+        /* 纯单行无界舞台 */
+        .container { 
+            display: inline-flex;
+            align-items: baseline;
+            background: transparent;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            line-height: 1;
+        }
+        
+        /* 核心精简数字 */
+        #bpm { 
+            font-size: 46px; font-weight: 100; color: #ffffff; 
+            letter-spacing: -1.5px; min-width: 65px; text-align: left;
+            transition: all 0.3s;
+        }
+        
+        /* 单行内联轻分界标签 */
+        .meta-inline { 
+            font-size: 11px; color: rgba(255,255,255,0.25); margin-left: 12px;
+            font-weight: 400; letter-spacing: 0.5px;
+        }
+        #maxBpm { font-weight: 600; color: rgba(255,255,255,0.4); margin-left: 3px; }
+
+        @keyframes micro-glow {
+            0% { text-shadow: 0 0 0px transparent; }
+            100% { text-shadow: 0 0 8px rgba(255,0,50,0.4); }
+        }
+
+        /* 状态平滑变色 */
+        .status-normal {}
+        
+        .status-warning #bpm { color: #ffbc00; font-weight: 200; }
+        .status-warning #maxBpm { color: rgba(255,188,0,0.5); }
+
+        .status-danger #bpm { color: #ff0033; font-weight: 300; animation: micro-glow 0.4s infinite alternate ease-in-out; }
+        .status-danger #maxBpm { color: rgba(255,0,51,0.5); }
+
+        /* 离线隐形 */
+        .disconnected #bpm { color: rgba(255,255,255,0.08); font-size: 30px; font-weight: 100; }
+        .disconnected .meta-inline { color: rgba(255,255,255,0.03); }
+        .disconnected #maxBpm { color: rgba(255,255,255,0.03); }
+    </style>
+</head>
+<body>
+    <div id="wrapper" class="container disconnected">
+        <span id="bpm">--</span>
+        <span class="meta-inline">MAX <span id="maxBpm">--</span></span>
+    </div>
+
+    <script>
+        let socket = null;
+        let lastMessageTime = Date.now();
+        let currentStatus = 'disconnected'; 
+        let currentHR = '--';
+        let currentMax = '--';
+
+        const bpmEl = document.getElementById('bpm');
+        const maxEl = document.getElementById('maxBpm');
+        const wrapper = document.getElementById('wrapper');
+
+        function connect() {
+            if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+            socket = new WebSocket('ws://127.0.0.1:8001');
+
+            socket.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    lastMessageTime = Date.now();
+
+                    if (data.connected && data.heart_rate > 0) {
+                        const hr = data.heart_rate;
+                        const max = data.max_heart_rate || '--';
+
+                        if (hr !== currentHR) {
+                            bpmEl.innerText = hr;
+                            currentHR = hr;
+                        }
+                        if (max !== currentMax) {
+                            maxEl.innerText = max;
+                            currentMax = max;
+                        }
+
+                        let targetStatus = 'status-normal';
+                        if (hr >= 120) targetStatus = 'status-danger';
+                        else if (hr >= 100) targetStatus = 'status-warning';
+
+                        if (currentStatus !== targetStatus) {
+                            wrapper.classList.remove('disconnected', 'status-normal', 'status-warning', 'status-danger');
+                            wrapper.classList.add(targetStatus);
+                            currentStatus = targetStatus;
+                        }
+                    } else {
+                        updateStateToDisconnected("OFF");
+                    }
+                } catch (e) { console.error("Data error:", e); }
+            };
+
+            socket.onclose = () => { updateStateToDisconnected("LOST"); setTimeout(connect, 5000); };
+            socket.onerror = () => { socket.close(); };
+        }
+
+        function updateStateToDisconnected(text) {
+            if (currentStatus !== 'disconnected') {
+                wrapper.className = 'container disconnected';
+                bpmEl.innerText = text;
+                maxEl.innerText = '--';
+                currentStatus = 'disconnected';
+                currentHR = '--';
+                currentMax = '--';
+            }
+        }
+
+        setInterval(() => {
+            if (currentStatus !== 'disconnected' && (Date.now() - lastMessageTime > 4000)) {
+                updateStateToDisconnected("WAIT");
+            }
+        }, 1000);
+
+        connect();
+    </script>
+</body>
+</html>

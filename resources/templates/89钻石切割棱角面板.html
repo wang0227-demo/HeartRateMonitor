@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>心率 - 棱角切割面板</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background: transparent;padding:30px;}
+.cut-panel{
+  width: 300px;
+  height: 95px;
+  background: linear-gradient(135deg, #1a1a28, #24243a);
+  /* 切角效果 */
+  clip-path: polygon(0 0, 95% 0, 100% 50%, 95% 100%, 0 100%, 5% 50%);
+  padding: 0 40px;
+  display: flex;
+  align-items: center;
+  box-shadow: 0 0 18px rgba(100,120,255,0.2);
+}
+#bpm{font-size: 48px; font-weight:bold; flex:1; font-family:monospace;}
+.text-info{color:#9498b8;font-size:13px;}
+/* 状态色 */
+.status-normal #bpm{color:#72e0ff;}
+.status-warning #bpm{color:#ffd966;}
+.status-danger #bpm{color:#ff5e70;animation: scaleAnim 0.7s infinite;}
+.disconnected #bpm{color:#4a4a66;}
+@keyframes scaleAnim{
+  0%,100%{transform:scale(1)}
+  50%{transform:scale(1.03)}
+}
+</style>
+</head>
+<body>
+<div id="wrap" class="cut-panel disconnected">
+  <div id="bpm">--</div>
+  <div class="text-info">峰值<br><span id="maxBpm">--</span></div>
+</div>
+
+<script>
+let socket, lastTime = Date.now(), status = 'disconnected';
+const bpm = document.getElementById('bpm');
+const maxBpm = document.getElementById('maxBpm');
+const wrap = document.getElementById('wrap');
+
+function connect(){
+  if(socket && [0,1].includes(socket.readyState)) return;
+  socket = new WebSocket('ws://127.0.0.1:8001');
+  socket.onmessage = e => {
+    try{
+      const d = JSON.parse(e.data);
+      lastTime = Date.now();
+      if(d.connected && d.heart_rate > 0){
+        bpm.innerText = d.heart_rate;
+        maxBpm.innerText = d.max_heart_rate || '--';
+        let st = 'status-normal';
+        if(d.heart_rate >= 120) st = 'status-danger';
+        else if(d.heart_rate >= 100) st = 'status-warning';
+        wrap.className = 'cut-panel ' + st;
+        status = st;
+      }else{
+        wrap.className = 'cut-panel disconnected';
+        bpm.innerText = '--';
+        maxBpm.innerText = '--';
+        status = 'disconnected';
+      }
+    }catch(err){}
+  };
+  socket.onclose = () => {
+    wrap.className = 'cut-panel disconnected';
+    setTimeout(connect, 5000);
+  };
+}
+setInterval(()=>{
+  if(status !== 'disconnected' && Date.now() - lastTime > 4000){
+    wrap.className = 'cut-panel disconnected';
+    status = 'disconnected';
+  }
+},1000);
+connect();
+</script>
+</body>
+</html>

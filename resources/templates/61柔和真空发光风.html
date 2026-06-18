@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { background: transparent; overflow: hidden; margin: 0; padding: 20px; }
+        
+        /* 霓虹灯导轨底座 */
+        .container { 
+            display: inline-flex;
+            align-items: center;
+            background: rgba(8, 5, 15, 0.75);
+            padding: 10px 26px;
+            border-radius: 50px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5), inset 0 0 10px rgba(0, 240, 255, 0.1);
+            font-family: 'Arial Black', -apple-system, sans-serif;
+            position: relative;
+        }
+
+        /* 模拟霓虹灯管通电时的电压不稳闪烁 */
+        @keyframes neon-glow {
+            0%, 100% { filter: brightness(1) drop-shadow(0 0 2px var(--neon-main)); }
+            50% { filter: brightness(1.15) drop-shadow(0 0 6px var(--neon-main)); }
+            92% { filter: brightness(1); }
+            93% { filter: brightness(0.6); }
+            94% { filter: brightness(1.2); }
+        }
+        
+        /* 主数值：霓虹真空管双重阴影字（白芯 + 彩晕） */
+        #bpm { 
+            font-size: 50px; font-weight: 900; 
+            color: #ffffff; line-height: 1;
+            min-width: 85px; text-align: center;
+            text-shadow: 0 0 4px #fff, 0 0 10px var(--neon-main), 0 0 20px var(--neon-main);
+            animation: neon-glow 4s infinite linear;
+            font-style: italic;
+        }
+        
+        /* 右侧独立霓虹指示灯与最高值 */
+        .neon-side { 
+            display: flex; flex-direction: column; margin-left: 18px;
+            border-left: 2px solid rgba(255,255,255,0.1); padding-left: 16px; line-height: 1.1;
+        }
+        .neon-tag { font-size: 8px; color: var(--neon-sub); font-weight: bold; letter-spacing: 1px; font-family: Arial, sans-serif;}
+        #maxBpm { 
+            font-size: 20px; color: #ffffff; font-weight: bold; font-style: italic; margin-top: 3px;
+            text-shadow: 0 0 4px #fff, 0 0 10px var(--neon-sub);
+        }
+        
+        /* 状态变色（粉青撞色 -> 橙黄 -> 极速血红抽搐） */
+        .status-normal { --neon-main: #00f0ff; --neon-sub: #ff00a0; }
+        
+        .status-warning { --neon-main: #ffaa00; --neon-sub: #00f0ff; }
+        .status-warning #bpm { text-shadow: 0 0 4px #fff, 0 0 10px #ffaa00, 0 0 20px #ffaa00; }
+
+        .status-danger { --neon-main: #ff0044; --neon-sub: #ffaa00; }
+        .status-danger #bpm { 
+            color: #ffccff;
+            text-shadow: 0 0 5px #fff, 0 0 12px #ff0044, 0 0 30px #ff0044; 
+            animation: neon-glow 0.3s infinite linear; 
+        }
+
+        /* 霓虹灯管断电（彻底熄灭，转为灰暗暗管质感） */
+        .disconnected { background: rgba(5, 5, 8, 0.8) !important; border-color: rgba(255,255,255,0.02) !important; box-shadow: none !important; }
+        .disconnected #bpm { color: #20222a; text-shadow: none !important; font-size: 32px; animation: none !important; font-style: normal; }
+        .disconnected .neon-side { border-left-color: #1a1b22; }
+        .disconnected #maxBpm { color: #1a1b22; text-shadow: none !important; font-style: normal; }
+        .disconnected .neon-tag { color: #15161c; }
+    </style>
+</head>
+<body>
+    <div id="wrapper" class="container disconnected">
+        <span id="bpm">--</span>
+        <div class="neon-side">
+            <span class="neon-tag">PEAK PULSE</span>
+            <span id="maxBpm">--</span>
+        </div>
+    </div>
+
+    <script>
+        let socket = null;
+        let lastMessageTime = Date.now();
+        let currentStatus = 'disconnected'; 
+        let currentHR = '--';
+        let currentMax = '--';
+
+        const bpmEl = document.getElementById('bpm');
+        const maxEl = document.getElementById('maxBpm');
+        const wrapper = document.getElementById('wrapper');
+
+        function connect() {
+            if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+            socket = new WebSocket('ws://127.0.0.1:8001');
+
+            socket.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    lastMessageTime = Date.now();
+
+                    if (data.connected && data.heart_rate > 0) {
+                        const hr = data.heart_rate;
+                        const max = data.max_heart_rate || '--';
+
+                        if (hr !== currentHR) {
+                            bpmEl.innerText = hr;
+                            currentHR = hr;
+                        }
+                        if (max !== currentMax) {
+                            maxEl.innerText = max;
+                            currentMax = max;
+                        }
+
+                        let targetStatus = 'status-normal';
+                        if (hr >= 120) targetStatus = 'status-danger';
+                        else if (hr >= 100) targetStatus = 'status-warning';
+
+                        if (currentStatus !== targetStatus) {
+                            wrapper.classList.remove('disconnected', 'status-normal', 'status-warning', 'status-danger');
+                            wrapper.classList.add(targetStatus);
+                            currentStatus = targetStatus;
+                        }
+                    } else {
+                        updateStateToDisconnected("OFF");
+                    }
+                } catch (e) { console.error("Data error:", e); }
+            };
+
+            socket.onclose = () => { updateStateToDisconnected("LOST"); setTimeout(connect, 5000); };
+            socket.onerror = () => { socket.close(); };
+        }
+
+        function updateStateToDisconnected(text) {
+            if (currentStatus !== 'disconnected') {
+                wrapper.className = 'container disconnected';
+                bpmEl.innerText = text;
+                maxEl.innerText = '--';
+                currentStatus = 'disconnected';
+                currentHR = '--';
+                currentMax = '--';
+            }
+        }
+
+        setInterval(() => {
+            if (currentStatus !== 'disconnected' && (Date.now() - lastMessageTime > 4000)) {
+                updateStateToDisconnected("WAIT");
+            }
+        }, 1000);
+
+        connect();
+    </script>
+</body>
+</html>

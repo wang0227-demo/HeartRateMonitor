@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { background: transparent; overflow: hidden; margin: 0; padding: 20px; }
+        
+        /* 圆润小徽章布局 */
+        .container { 
+            display: inline-flex; 
+            align-items: center; 
+            font-family: '-apple-system', BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 10px 22px;
+            border-radius: 50px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.15), 0 2px 4px rgba(0,0,0,0.1);
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        
+        /* 状态指示小圆点 */
+        .heart { 
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            margin-right: 15px; 
+            display: inline-block; 
+            will-change: transform;
+        }
+        
+        /* 核心心率大字 */
+        #bpm { 
+            font-size: 42px; 
+            font-weight: 800; 
+            color: #1d1d1f;
+            min-width: 65px; 
+            text-align: center;
+            line-height: 1;
+        }
+        
+        /* 垂直最高值标签 */
+        .max-info { 
+            display: flex; 
+            flex-direction: column; 
+            align-items: flex-start; 
+            margin-left: 15px; 
+            padding-left: 15px;
+            border-left: 2px solid #eee;
+        }
+        .max-label { font-size: 10px; color: #86868b; text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px; }
+        #maxBpm { font-size: 18px; font-weight: 700; color: #424245; margin-top: 1px; }
+        
+        /* 呼吸与跳动动画 */
+        @keyframes soft-pulse { 0% { transform: scale(1); opacity: 0.6; } 50% { transform: scale(1.4); opacity: 1; } 100% { transform: scale(1); opacity: 0.6; } }
+        @keyframes warning-pulse { 0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255,149,0,0.4); } 70% { transform: scale(1.3); box-shadow: 0 0 0 8px rgba(255,149,0,0); } 100% { transform: scale(1); } }
+        @keyframes danger-pop { 0% { transform: scale(1); } 50% { transform: scale(1.15); background-color: #ff3b30; } 100% { transform: scale(1); } }
+        
+        /* 状态样式 */
+        .status-normal .heart { background-color: #34c759; animation: soft-pulse 1.2s infinite ease-in-out; }
+        
+        .status-warning .heart { background-color: #ff9500; animation: warning-pulse 0.8s infinite ease-out; }
+        
+        .status-danger { background: #fff1f0 !important; }
+        .status-danger .heart { background-color: #ff3b30; }
+        .status-danger .container { animation: danger-pop 0.4s infinite cubic-bezier(0.25, 0.46, 0.45, 0.94); }
+        .status-danger #bpm { color: #ff3b30; }
+
+        /* 断开连接 */
+        .disconnected { background: rgba(220, 220, 220, 0.8) !important; box-shadow: none !important; }
+        .disconnected .heart { background-color: #8e8e93 !important; animation: none !important; }
+        .disconnected #bpm { color: #8e8e93; }
+        .disconnected #maxBpm { color: #8e8e93; }
+    </style>
+</head>
+<body>
+    <div id="wrapper" class="container disconnected">
+        <span id="heartIcon" class="heart"></span>
+        <span id="bpm">--</span>
+        <div class="max-info">
+            <span class="max-label">MAX</span>
+            <span id="maxBpm">--</span>
+        </div>
+    </div>
+
+    <script>
+        let socket = null;
+        let lastMessageTime = Date.now();
+        let currentStatus = 'disconnected'; 
+        let currentHR = '--';
+        let currentMax = '--';
+
+        const bpmEl = document.getElementById('bpm');
+        const maxEl = document.getElementById('maxBpm');
+        const wrapper = document.getElementById('wrapper');
+
+        function connect() {
+            if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+            socket = new WebSocket('ws://127.0.0.1:8001');
+
+            socket.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    lastMessageTime = Date.now();
+
+                    if (data.connected && data.heart_rate > 0) {
+                        const hr = data.heart_rate;
+                        const max = data.max_heart_rate || '--';
+
+                        if (hr !== currentHR) {
+                            bpmEl.innerText = hr;
+                            currentHR = hr;
+                        }
+                        if (max !== currentMax) {
+                            maxEl.innerText = max;
+                            currentMax = max;
+                        }
+
+                        let targetStatus = 'status-normal';
+                        if (hr >= 120) targetStatus = 'status-danger';
+                        else if (hr >= 100) targetStatus = 'status-warning';
+
+                        if (currentStatus !== targetStatus) {
+                            wrapper.classList.remove('disconnected', 'status-normal', 'status-warning', 'status-danger');
+                            wrapper.classList.add(targetStatus);
+                            currentStatus = targetStatus;
+                        }
+                    } else {
+                        updateStateToDisconnected("OFF");
+                    }
+                } catch (e) { console.error("Data error:", e); }
+            };
+
+            socket.onclose = () => { 
+                updateStateToDisconnected("LOST"); 
+                setTimeout(connect, 5000); 
+            };
+            socket.onerror = () => { socket.close(); };
+        }
+
+        function updateStateToDisconnected(text) {
+            if (currentStatus !== 'disconnected') {
+                wrapper.className = 'container disconnected';
+                bpmEl.innerText = text;
+                maxEl.innerText = '--';
+                currentStatus = 'disconnected';
+                currentHR = '--';
+                currentMax = '--';
+            }
+        }
+
+        setInterval(() => {
+            if (currentStatus !== 'disconnected' && (Date.now() - lastMessageTime > 4000)) {
+                updateStateToDisconnected("WAIT");
+            }
+        }, 1000);
+
+        connect();
+    </script>
+</body>
+</html>

@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { background: transparent; overflow: hidden; margin: 0; padding: 20px; }
+        
+        /* 纯 CSS 梯形切角战术框 */
+        .container { 
+            display: inline-flex;
+            align-items: center;
+            background: rgba(15, 18, 22, 0.9);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-right: 4px solid var(--heavy-color, #ff4400);
+            padding: 6px 20px;
+            /* 制造高端枪械UI特有的硬核斜切边 */
+            clip-path: polygon(0 0, 92% 0, 100% 30%, 100% 100%, 8% 100%, 0 70%);
+            font-family: 'Impact', sans-serif;
+            position: relative;
+        }
+
+        /* 左侧小倒三角战术指示器 */
+        .triangle {
+            width: 0; height: 0;
+            border-left: 5px solid transparent; border-right: 5px solid transparent;
+            border-top: 8px solid var(--heavy-color, #ff4400);
+            margin-right: 12px; transition: border-color 0.3s;
+        }
+        
+        /* 核心弹药级粗大数字 */
+        #bpm { 
+            font-size: 44px; font-weight: 900; color: #ffffff; line-height: 1;
+            min-width: 75px; text-align: center; letter-spacing: 0.5px;
+        }
+        
+        /* 右侧弹仓参数 */
+        .ammo-meta { display: flex; flex-direction: column; margin-left: 14px; line-height: 1; }
+        .ammo-lbl { font-size: 8px; color: rgba(255,255,255,0.25); font-family: Arial, sans-serif; font-weight: bold; }
+        #maxBpm { font-size: 18px; color: #ffffff; margin-top: 3px; opacity: 0.8; }
+
+        @keyframes hardware-glitch {
+            0%, 100% { opacity: 1; }
+            95% { opacity: 1; }
+            96% { opacity: 0.2; }
+            97% { opacity: 0.9; }
+            98% { opacity: 0.1; }
+        }
+
+        /* 状态设置（硬核军工橙 -> 炽黄 -> 警告红） */
+        .status-normal { --heavy-color: #ff5500; }
+        
+        .status-warning { --heavy-color: #ffcc00; }
+        .status-warning #bpm { color: #ffcc00; }
+
+        .status-danger { --heavy-color: #e60000; }
+        .status-danger #bpm { color: #e60000; animation: hardware-glitch 0.8s infinite linear; }
+
+        /* 战术武器断电离线 */
+        .disconnected { border-right-color: #1a1c1e !important; background: #090a0c !important; clip-path: none !important; }
+        .disconnected .triangle { border-top-color: #1a1c1e !important; }
+        .disconnected #bpm { color: #1a1c1e; font-size: 28px; animation: none !important; }
+        .disconnected #maxBpm { color: #1a1c1e; }
+        .disconnected .ammo-lbl { color: #111215; }
+    </style>
+</head>
+<body>
+    <div id="wrapper" class="container disconnected">
+        <div class="triangle"></div>
+        <span id="bpm">--</span>
+        <div class="ammo-meta">
+            <span class="ammo-lbl">MAX_CAP</span>
+            <span id="maxBpm">--</span>
+        </div>
+    </div>
+
+    <script>
+        let socket = null;
+        let lastMessageTime = Date.now();
+        let currentStatus = 'disconnected'; 
+        let currentHR = '--';
+        let currentMax = '--';
+
+        const bpmEl = document.getElementById('bpm');
+        const maxEl = document.getElementById('maxBpm');
+        const wrapper = document.getElementById('wrapper');
+
+        function connect() {
+            if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+            socket = new WebSocket('ws://127.0.0.1:8001');
+
+            socket.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    lastMessageTime = Date.now();
+
+                    if (data.connected && data.heart_rate > 0) {
+                        const hr = data.heart_rate;
+                        const max = data.max_heart_rate || '--';
+
+                        if (hr !== currentHR) {
+                            bpmEl.innerText = hr;
+                            currentHR = hr;
+                        }
+                        if (max !== currentMax) {
+                            maxEl.innerText = max;
+                            currentMax = max;
+                        }
+
+                        let targetStatus = 'status-normal';
+                        if (hr >= 120) targetStatus = 'status-danger';
+                        else if (hr >= 100) targetStatus = 'status-warning';
+
+                        if (currentStatus !== targetStatus) {
+                            wrapper.classList.remove('disconnected', 'status-normal', 'status-warning', 'status-danger');
+                            wrapper.classList.add(targetStatus);
+                            currentStatus = targetStatus;
+                        }
+                    } else {
+                        updateStateToDisconnected("OFF");
+                    }
+                } catch (e) { console.error("Data error:", e); }
+            };
+
+            socket.onclose = () => { updateStateToDisconnected("LOST"); setTimeout(connect, 5000); };
+            socket.onerror = () => { socket.close(); };
+        }
+
+        function updateStateToDisconnected(text) {
+            if (currentStatus !== 'disconnected') {
+                wrapper.className = 'container disconnected';
+                bpmEl.innerText = text;
+                maxEl.innerText = '--';
+                currentStatus = 'disconnected';
+                currentHR = '--';
+                currentMax = '--';
+            }
+        }
+
+        setInterval(() => {
+            if (currentStatus !== 'disconnected' && (Date.now() - lastMessageTime > 4000)) {
+                updateStateToDisconnected("WAIT");
+            }
+        }, 1000);
+
+        connect();
+    </script>
+</body>
+</html>

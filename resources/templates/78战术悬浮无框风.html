@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { background: transparent; overflow: hidden; margin: 0; padding: 20px; }
+        
+        /* 纯全息无框容器 */
+        .container { 
+            display: inline-flex;
+            align-items: center;
+            font-family: 'Consolas', monospace;
+            background: transparent;
+            padding: 10px 30px;
+            position: relative;
+        }
+
+        /* 纯CSS绘制左右两端的科幻 HUD 托架 */
+        .container::before, .container::after {
+            content: ''; position: absolute; top: 0; bottom: 0; width: 10px;
+            border-color: var(--hud-color, #00ffaa); border-style: solid;
+        }
+        .container::before { left: 0; border-width: 2px 0 2px 2px; } /* 左括号 */
+        .container::after { right: 0; border-width: 2px 2px 2px 0; } /* 右括号 */
+        
+        /* 主数值 */
+        #bpm { 
+            font-size: 46px; font-weight: bold; 
+            color: var(--hud-color, #00ffaa); 
+            text-shadow: 0 0 10px var(--hud-color, rgba(0,255,170,0.5));
+            min-width: 80px; text-align: center; line-height: 1;
+        }
+        
+        /* 右侧垂直嵌套的参数 */
+        .max-info { 
+            display: flex; flex-direction: column; 
+            margin-left: 15px; border-left: 1px dotted var(--hud-color, #00ffaa); padding-left: 12px;
+        }
+        .max-label { font-size: 8px; color: rgba(255,255,255,0.4); font-weight: bold; }
+        #maxBpm { font-size: 16px; color: #ffffff; opacity: 0.8; font-weight: bold; }
+        
+        /* 全息信号闪烁干扰动画 */
+        @keyframes hud-alert {
+            0%, 100% { opacity: 0.8; transform: scale(1); }
+            50% { opacity: 1; transform: scale(1.03); filter: brightness(1.2); }
+        }
+
+        /* 状态设置 */
+        .status-normal { --hud-color: #00ffaa; }
+        
+        .status-warning { --hud-color: #ffaa00; animation: hud-alert 0.8s infinite ease-in-out; }
+        
+        .status-danger { --hud-color: #ff0055; animation: hud-alert 0.3s infinite linear; }
+
+        /* 系统断开（HUD离线） */
+        .disconnected { }
+        .disconnected::before, .disconnected::after { border-color: #333 !important; }
+        .disconnected #bpm { color: #333; text-shadow: none; font-size: 32px; }
+        .disconnected .max-info { border-left-color: #222; }
+        .disconnected #maxBpm { color: #333; }
+        .disconnected .max-label { color: #222; }
+    </style>
+</head>
+<body>
+    <div id="wrapper" class="container disconnected">
+        <span id="bpm">--</span>
+        <div class="max-info">
+            <span class="max-label">PEAK_RND</span>
+            <span id="maxBpm">--</span>
+        </div>
+    </div>
+
+    <script>
+        let socket = null;
+        let lastMessageTime = Date.now();
+        let currentStatus = 'disconnected'; 
+        let currentHR = '--';
+        let currentMax = '--';
+
+        const bpmEl = document.getElementById('bpm');
+        const maxEl = document.getElementById('maxBpm');
+        const wrapper = document.getElementById('wrapper');
+
+        function connect() {
+            if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+            socket = new WebSocket('ws://127.0.0.1:8001');
+
+            socket.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    lastMessageTime = Date.now();
+
+                    if (data.connected && data.heart_rate > 0) {
+                        const hr = data.heart_rate;
+                        const max = data.max_heart_rate || '--';
+
+                        if (hr !== currentHR) {
+                            bpmEl.innerText = hr;
+                            currentHR = hr;
+                        }
+                        if (max !== currentMax) {
+                            maxEl.innerText = max;
+                            currentMax = max;
+                        }
+
+                        let targetStatus = 'status-normal';
+                        if (hr >= 120) targetStatus = 'status-danger';
+                        else if (hr >= 100) targetStatus = 'status-warning';
+
+                        if (currentStatus !== targetStatus) {
+                            wrapper.classList.remove('disconnected', 'status-normal', 'status-warning', 'status-danger');
+                            wrapper.classList.add(targetStatus);
+                            currentStatus = targetStatus;
+                        }
+                    } else {
+                        updateStateToDisconnected("OFF");
+                    }
+                } catch (e) { console.error("Data error:", e); }
+            };
+
+            socket.onclose = () => { updateStateToDisconnected("LOST"); setTimeout(connect, 5000); };
+            socket.onerror = () => { socket.close(); };
+        }
+
+        function updateStateToDisconnected(text) {
+            if (currentStatus !== 'disconnected') {
+                wrapper.className = 'container disconnected';
+                bpmEl.innerText = text;
+                maxEl.innerText = '--';
+                currentStatus = 'disconnected';
+                currentHR = '--';
+                currentMax = '--';
+            }
+        }
+
+        setInterval(() => {
+            if (currentStatus !== 'disconnected' && (Date.now() - lastMessageTime > 4000)) {
+                updateStateToDisconnected("WAIT");
+            }
+        }, 1000);
+
+        connect();
+    </script>
+</body>
+</html>

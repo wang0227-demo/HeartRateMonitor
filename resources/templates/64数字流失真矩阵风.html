@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { background: transparent; overflow: hidden; margin: 0; padding: 20px; }
+        
+        /* 纯文本无底色终端舞台 */
+        .container { 
+            display: inline-flex;
+            align-items: center;
+            background: transparent;
+            padding: 8px 16px;
+            font-family: 'Consolas', 'Courier New', monospace;
+            position: relative;
+        }
+
+        /* 终端代码注入标记 */
+        .term-arrow { color: var(--glitch-green, #00ff66); font-weight: bold; font-size: 20px; margin-right: 12px; }
+        
+        /* 主心率数据 */
+        #bpm { 
+            font-size: 46px; font-weight: bold; 
+            color: #ffffff; line-height: 1;
+            min-width: 80px; text-align: left;
+            text-shadow: 0 0 6px var(--glitch-green, #00ff66);
+        }
+        
+        /* 右侧垂直对齐的黑客数据段 */
+        .term-meta { 
+            display: flex; flex-direction: column; margin-left: 15px;
+            background: rgba(0,255,102,0.05); padding: 4px 10px;
+            border: 1px solid rgba(0,255,102,0.2);
+        }
+        .term-lbl { font-size: 8px; color: var(--glitch-green, #00ff66); opacity: 0.7; font-weight: bold; }
+        #maxBpm { font-size: 16px; color: #ffffff; font-weight: bold; margin-top: 2px; }
+        
+        /* 高级故障抽搐代码动效 */
+        @keyframes terminal-glitch {
+            0% { transform: translate(0) skewX(0deg); filter: hue-rotate(0deg); }
+            10% { transform: translate(-2px, 1px) skewX(-10deg); }
+            20% { transform: translate(2px, -1px) skewX(10deg); filter: hue-rotate(90deg); }
+            30% { transform: translate(0); }
+            100% { transform: translate(0); }
+        }
+
+        /* 状态设置 */
+        .status-normal { --glitch-green: #00ff66; }
+        
+        .status-warning { --glitch-green: #ffcc00; }
+        .status-warning .term-meta { background: rgba(255,204,0,0.05); border-color: rgba(255,204,0,0.2); }
+
+        .status-danger { --glitch-green: #ff0055; }
+        .status-danger #bpm { 
+            color: #ff0055; text-shadow: 0 0 10px #ff0055; 
+            animation: terminal-glitch 0.25s infinite linear; 
+        }
+        .status-danger .term-meta { background: rgba(255,0,85,0.1); border-color: #ff0055; }
+
+        /* 断开连接（终端离线崩溃） */
+        .disconnected .term-arrow { color: #333338; }
+        .disconnected #bpm { color: #333338; text-shadow: none; font-size: 30px; animation: none !important; }
+        .disconnected .term-meta { background: transparent !important; border-color: #222 !important; }
+        .disconnected #maxBpm { color: #333338; }
+        .disconnected .term-lbl { color: #222; }
+    </style>
+</head>
+<body>
+    <div id="wrapper" class="container disconnected">
+        <span class="term-arrow">>>></span>
+        <span id="bpm">--</span>
+        <div class="term-meta">
+            <span class="term-lbl">PEAK_MEM</span>
+            <span id="maxBpm">--</span>
+        </div>
+    </div>
+
+    <script>
+        let socket = null;
+        let lastMessageTime = Date.now();
+        let currentStatus = 'disconnected'; 
+        let currentHR = '--';
+        let currentMax = '--';
+
+        const bpmEl = document.getElementById('bpm');
+        const maxEl = document.getElementById('maxBpm');
+        const wrapper = document.getElementById('wrapper');
+
+        function connect() {
+            if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+            socket = new WebSocket('ws://127.0.0.1:8001');
+
+            socket.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    lastMessageTime = Date.now();
+
+                    if (data.connected && data.heart_rate > 0) {
+                        const hr = data.heart_rate;
+                        const max = data.max_heart_rate || '--';
+
+                        if (hr !== currentHR) {
+                            bpmEl.innerText = hr;
+                            currentHR = hr;
+                        }
+                        if (max !== currentMax) {
+                            maxEl.innerText = max;
+                            currentMax = max;
+                        }
+
+                        let targetStatus = 'status-normal';
+                        if (hr >= 120) targetStatus = 'status-danger';
+                        else if (hr >= 100) targetStatus = 'status-warning';
+
+                        if (currentStatus !== targetStatus) {
+                            wrapper.classList.remove('disconnected', 'status-normal', 'status-warning', 'status-danger');
+                            wrapper.classList.add(targetStatus);
+                            currentStatus = targetStatus;
+                        }
+                    } else {
+                        updateStateToDisconnected("OFF");
+                    }
+                } catch (e) { console.error("Data error:", e); }
+            };
+
+            socket.onclose = () => { updateStateToDisconnected("LOST"); setTimeout(connect, 5000); };
+            socket.onerror = () => { socket.close(); };
+        }
+
+        function updateStateToDisconnected(text) {
+            if (currentStatus !== 'disconnected') {
+                wrapper.className = 'container disconnected';
+                bpmEl.innerText = text;
+                maxEl.innerText = '--';
+                currentStatus = 'disconnected';
+                currentHR = '--';
+                currentMax = '--';
+            }
+        }
+
+        setInterval(() => {
+            if (currentStatus !== 'disconnected' && (Date.now() - lastMessageTime > 4000)) {
+                updateStateToDisconnected("WAIT");
+            }
+        }, 1000);
+
+        connect();
+    </script>
+</body>
+</html>

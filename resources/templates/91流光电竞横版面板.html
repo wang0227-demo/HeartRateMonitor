@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>心率 - 流光电竞面板</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background: transparent; padding:30px;}
+.eco-panel{
+  width: 300px;
+  height: 80px;
+  background: linear-gradient(90deg, #0a1024, #0f1838);
+  border-radius: 8px;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  padding: 0 30px;
+  font-family: "Microsoft Yahei", sans-serif;
+}
+/* 流光边框动画 */
+.eco-panel::before{
+  content:'';
+  position:absolute;
+  top:0;left:-100%;
+  width:100%;height:3px;
+  background: linear-gradient(90deg, transparent, #00d8ff, transparent);
+  animation: stream 2.5s linear infinite;
+}
+.eco-panel::after{
+  content:'';
+  position:absolute;
+  bottom:0;right:-100%;
+  width:100%;height:3px;
+  background: linear-gradient(90deg, transparent, #7b2cbf, transparent);
+  animation: stream 2.5s linear infinite reverse;
+}
+@keyframes stream{
+  0%{left:-100%}
+  100%{left:100%}
+}
+.panel-label{color:#89a2d8;font-size:14px;letter-spacing:2px;}
+#bpm{font-size:46px;font-weight:bold;color:#fff;margin:0 20px;text-shadow:0 0 10px #00d8ff;}
+.max-text{color:#6c7aa8;font-size:13px;}
+/* 状态样式 */
+.status-normal #bpm{color:#00d8ff;text-shadow:0 0 12px #00d8ff;}
+.status-warning #bpm{color:#ffc107;text-shadow:0 0 12px #ffc107;}
+.status-danger #bpm{color:#ff3e6c;text-shadow:0 0 12px #ff3e6c;animation: beat 0.6s infinite;}
+.disconnected #bpm{color:#444;text-shadow:none;}
+@keyframes beat{
+  0%,100%{transform:scale(1)}
+  50%{transform:scale(1.05)}
+}
+</style>
+</head>
+<body>
+<div id="wrap" class="eco-panel disconnected">
+  <span class="panel-label">实时心率</span>
+  <span id="bpm">--</span>
+  <span class="max-text">峰值：<span id="maxBpm">--</span></span>
+</div>
+
+<script>
+let socket, lastTime = Date.now(), status = 'disconnected';
+const bpm = document.getElementById('bpm');
+const maxBpm = document.getElementById('maxBpm');
+const wrap = document.getElementById('wrap');
+
+function connect(){
+  if(socket && [0,1].includes(socket.readyState)) return;
+  socket = new WebSocket('ws://127.0.0.1:8001');
+  socket.onmessage = e => {
+    try{
+      const d = JSON.parse(e.data);
+      lastTime = Date.now();
+      if(d.connected && d.heart_rate > 0){
+        bpm.innerText = d.heart_rate;
+        maxBpm.innerText = d.max_heart_rate || '--';
+        let st = 'status-normal';
+        if(d.heart_rate >= 120) st = 'status-danger';
+        else if(d.heart_rate >= 100) st = 'status-warning';
+        wrap.className = 'eco-panel ' + st;
+        status = st;
+      }else{
+        wrap.className = 'eco-panel disconnected';
+        bpm.innerText = '离线';
+        maxBpm.innerText = '--';
+        status = 'disconnected';
+      }
+    }catch(err){}
+  };
+  socket.onclose = () => {
+    wrap.className = 'eco-panel disconnected';
+    bpm.innerText = '断连';
+    setTimeout(connect, 5000);
+  };
+}
+setInterval(()=>{
+  if(status !== 'disconnected' && Date.now() - lastTime > 4000){
+    wrap.className = 'eco-panel disconnected';
+    bpm.innerText = '超时';
+    status = 'disconnected';
+  }
+},1000);
+connect();
+</script>
+</body>
+</html>

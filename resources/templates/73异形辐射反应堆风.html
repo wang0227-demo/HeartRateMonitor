@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { background: transparent; overflow: hidden; margin: 0; padding: 20px; }
+        
+        /* 反应堆异形核芯 */
+        .container { 
+            display: inline-flex;
+            align-items: center;
+            background: #090a0d;
+            border-top: 3px solid var(--core-red, #ff002b);
+            border-bottom: 3px solid var(--core-red, #ff002b);
+            padding: 8px 22px;
+            position: relative;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+            font-family: 'Impact', sans-serif;
+        }
+
+        /* 左右两侧对称的重工业侧翼防护盾片 */
+        .container::before, .container::after {
+            content: ''; position: absolute; top: -3px; bottom: -3px; width: 6px;
+            background: #1e222b; border: 1px solid #323845;
+        }
+        .container::before { left: -6px; transform: skewY(15deg); border-right: none; }
+        .container::after { right: -6px; transform: skewY(-15deg); border-left: none; }
+        
+        /* 核心心率大字 */
+        #bpm { 
+            font-size: 48px; font-weight: 900; color: #ffffff; 
+            line-height: 1; letter-spacing: -0.5px; min-width: 75px; text-align: center;
+        }
+        
+        /* 独立排布的过载极限值 */
+        .reactor-info { display: flex; flex-direction: column; margin-left: 16px; line-height: 1; }
+        .reactor-lbl { font-size: 8px; color: #434957; font-weight: bold; letter-spacing: 0.5px; font-family: Arial, sans-serif;}
+        #maxBpm { font-size: 18px; color: var(--core-red, #ff002b); font-weight: bold; margin-top: 3px; }
+        
+        /* 核芯辐射扩散热律动 */
+        @keyframes core-radiation {
+            0% { box-shadow: 0 0 5px rgba(255,0,43,0.2), 0 10px 30px rgba(0,0,0,0.8); }
+            100% { box-shadow: 0 0 20px var(--core-red), 0 10px 30px rgba(0,0,0,0.8); }
+        }
+
+        /* 状态设置 */
+        .status-normal { --core-red: #ff002b; }
+        
+        .status-warning { --core-red: #ff5500; }
+        .status-warning #bpm { color: #ff5500; }
+        
+        .status-danger { --core-red: #ff0000; background: #140104; animation: core-radiation 0.4s infinite alternate ease-in-out; }
+        .status-danger #bpm { color: #ff0000; text-shadow: 0 0 10px rgba(255,0,0,0.6); }
+
+        /* 断开连接（核心冷却休眠） */
+        .disconnected { background: #0e0f12 !important; border-top-color: #222 !important; border-bottom-color: #222 !important; box-shadow: none !important; animation: none !important; }
+        .disconnected::before, .disconnected::after { background: #15171c !important; border-color: #222 !important; }
+        .disconnected #bpm { color: #2a2d36; font-size: 30px; }
+        .disconnected #maxBpm { color: #2a2d36; }
+        .disconnected .reactor-lbl { color: #1c1e24; }
+    </style>
+</head>
+<body>
+    <div id="wrapper" class="container disconnected">
+        <span id="bpm">--</span>
+        <div class="reactor-info">
+            <span class="reactor-lbl">CORE MAX</span>
+            <span id="maxBpm">--</span>
+        </div>
+    </div>
+
+    <script>
+        let socket = null;
+        let lastMessageTime = Date.now();
+        let currentStatus = 'disconnected'; 
+        let currentHR = '--';
+        let currentMax = '--';
+
+        const bpmEl = document.getElementById('bpm');
+        const maxEl = document.getElementById('maxBpm');
+        const wrapper = document.getElementById('wrapper');
+
+        function connect() {
+            if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+            socket = new WebSocket('ws://127.0.0.1:8001');
+
+            socket.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    lastMessageTime = Date.now();
+
+                    if (data.connected && data.heart_rate > 0) {
+                        const hr = data.heart_rate;
+                        const max = data.max_heart_rate || '--';
+
+                        if (hr !== currentHR) {
+                            bpmEl.innerText = hr;
+                            currentHR = hr;
+                        }
+                        if (max !== currentMax) {
+                            maxEl.innerText = max;
+                            currentMax = max;
+                        }
+
+                        let targetStatus = 'status-normal';
+                        if (hr >= 120) targetStatus = 'status-danger';
+                        else if (hr >= 100) targetStatus = 'status-warning';
+
+                        if (currentStatus !== targetStatus) {
+                            wrapper.classList.remove('disconnected', 'status-normal', 'status-warning', 'status-danger');
+                            wrapper.classList.add(targetStatus);
+                            currentStatus = targetStatus;
+                        }
+                    } else {
+                        updateStateToDisconnected("OFF");
+                    }
+                } catch (e) { console.error("Data error:", e); }
+            };
+
+            socket.onclose = () => { updateStateToDisconnected("LOST"); setTimeout(connect, 5000); };
+            socket.onerror = () => { socket.close(); };
+        }
+
+        function updateStateToDisconnected(text) {
+            if (currentStatus !== 'disconnected') {
+                wrapper.className = 'container disconnected';
+                bpmEl.innerText = text;
+                maxEl.innerText = '--';
+                currentStatus = 'disconnected';
+                currentHR = '--';
+                currentMax = '--';
+            }
+        }
+
+        setInterval(() => {
+            if (currentStatus !== 'disconnected' && (Date.now() - lastMessageTime > 4000)) {
+                updateStateToDisconnected("WAIT");
+            }
+        }, 1000);
+
+        connect();
+    </script>
+</body>
+</html>

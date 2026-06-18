@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { background: transparent; overflow: hidden; margin: 0; padding: 20px; }
+        
+        /* 战术准星机械圆环 */
+        .container { 
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Consolas', monospace;
+            width: 130px;
+            height: 130px;
+            border-radius: 50%;
+            background: rgba(12, 18, 15, 0.7);
+            border: 2px dashed var(--hud-color, #00ff66);
+            position: relative;
+            box-sizing: border-box;
+            transition: all 0.3s linear;
+        }
+
+        /* 准心外侧的机械卡爪（利用四个绝对定位装饰块） */
+        .container::before {
+            content: ''; position: absolute; top: -6px; left: -6px; right: -6px; bottom: -6px;
+            border-radius: 50%; border: 3px solid var(--hud-color, #00ff66);
+            clip-path: polygon(45% 0, 55% 0, 55% 100%, 45% 100%, 0 55%, 0 45%, 100% 45%, 100% 55%);
+            opacity: 0.6;
+            transition: transform 1s linear;
+        }
+        
+        /* 心率主数值 */
+        #bpm { 
+            font-size: 38px; font-weight: 900; 
+            color: var(--hud-color, #00ff66);
+            text-shadow: 0 0 6px var(--hud-color, #00ff66);
+            line-height: 1; margin-top: 10px;
+        }
+        
+        /* 顶部和底部的微型雷达读数 */
+        .max-info { position: absolute; top: 12px; text-align: center; }
+        .max-label { font-size: 8px; color: rgba(255,255,255,0.3); display: block; scale: 0.9; }
+        #maxBpm { font-size: 13px; color: #ffffff; opacity: 0.8; font-weight: bold; }
+        
+        .hud-tag { position: absolute; bottom: 12px; font-size: 8px; color: var(--hud-color, #00ff66); letter-spacing: 1px; }
+
+        /* 锁定与警报动画 */
+        @keyframes hud-rotate { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        @keyframes alert-flicker { 0%, 100% { opacity: 0.3; background: rgba(12, 18, 15, 0.7); } 50% { opacity: 1; background: rgba(50, 0, 10, 0.8); } }
+
+        /* 状态映射 */
+        .status-normal::before { animation: hud-rotate 15s infinite linear; }
+        
+        .status-warning { --hud-color: #ff9900; }
+        .status-warning::before { animation: hud-rotate 8s infinite linear; }
+        
+        .status-danger { --hud-color: #ff0044; border-style: solid; animation: alert-flicker 0.4s infinite; }
+        .status-danger::before { animation: hud-rotate 3s infinite linear; opacity: 1; }
+
+        /* 断开连接（HUD系统崩溃离线） */
+        .disconnected { border: 2px solid #333 !important; background: rgba(10,10,10,0.4) !important; }
+        .disconnected::before { display: none; }
+        .disconnected #bpm { color: #444; text-shadow: none; font-size: 26px; }
+        .disconnected #maxBpm { color: #444; }
+        .disconnected .max-label { color: #222; }
+        .disconnected .hud-tag { color: #444; }
+    </style>
+</head>
+<body>
+    <div id="wrapper" class="container disconnected">
+        <div class="max-info">
+            <span class="max-label">PEAK_LOCK</span>
+            <span id="maxBpm">--</span>
+        </div>
+        <span id="bpm">--</span>
+        <span class="hud-tag">SYS_HR</span>
+    </div>
+
+    <script>
+        let socket = null;
+        let lastMessageTime = Date.now();
+        let currentStatus = 'disconnected'; 
+        let currentHR = '--';
+        let currentMax = '--';
+
+        const bpmEl = document.getElementById('bpm');
+        const maxEl = document.getElementById('maxBpm');
+        const wrapper = document.getElementById('wrapper');
+
+        function connect() {
+            if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+            socket = new WebSocket('ws://127.0.0.1:8001');
+
+            socket.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    lastMessageTime = Date.now();
+
+                    if (data.connected && data.heart_rate > 0) {
+                        const hr = data.heart_rate;
+                        const max = data.max_heart_rate || '--';
+
+                        if (hr !== currentHR) {
+                            bpmEl.innerText = hr;
+                            currentHR = hr;
+                        }
+                        if (max !== currentMax) {
+                            maxEl.innerText = max;
+                            currentMax = max;
+                        }
+
+                        let targetStatus = 'status-normal';
+                        if (hr >= 120) targetStatus = 'status-danger';
+                        else if (hr >= 100) targetStatus = 'status-warning';
+
+                        if (currentStatus !== targetStatus) {
+                            wrapper.classList.remove('disconnected', 'status-normal', 'status-warning', 'status-danger');
+                            wrapper.classList.add(targetStatus);
+                            currentStatus = targetStatus;
+                        }
+                    } else {
+                        updateStateToDisconnected("OFF");
+                    }
+                } catch (e) { console.error("Data error:", e); }
+            };
+
+            socket.onclose = () => { updateStateToDisconnected("LOST"); setTimeout(connect, 5000); };
+            socket.onerror = () => { socket.close(); };
+        }
+
+        function updateStateToDisconnected(text) {
+            if (currentStatus !== 'disconnected') {
+                wrapper.className = 'container disconnected';
+                bpmEl.innerText = text;
+                maxEl.innerText = '--';
+                currentStatus = 'disconnected';
+                currentHR = '--';
+                currentMax = '--';
+            }
+        }
+
+        setInterval(() => {
+            if (currentStatus !== 'disconnected' && (Date.now() - lastMessageTime > 4000)) {
+                updateStateToDisconnected("WAIT");
+            }
+        }, 1000);
+
+        connect();
+    </script>
+</body>
+</html>

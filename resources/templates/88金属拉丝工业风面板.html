@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>心率 - 金属工业面板</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background: transparent;padding:30px;}
+.metal-panel{
+  width: 300px;
+  height: 95px;
+  background: linear-gradient(90deg, #444, #555, #444);
+  background-size: 8px 8px;
+  border: 2px solid #666;
+  border-radius: 6px;
+  padding: 0 25px;
+  display: flex;
+  align-items: center;
+  box-shadow: inset 0 2px 4px rgba(0,0,0,0.4), 0 4px 8px rgba(0,0,0,0.3);
+}
+.metal-label{color:#222;font-size:14px;font-weight:bold;}
+#bpm{font-size: 50px; margin:0 20px; flex:1; color:#111; font-family:monospace;}
+.metal-desc{color:#333;font-size:13px;}
+/* 状态指示灯式变色 */
+.status-normal{border-color:#27ae60;}
+.status-normal #bpm{color:#27ae60;}
+.status-warning{border-color:#f39c12;}
+.status-warning #bpm{color:#f39c12;}
+.status-danger{border-color:#e74c3c;}
+.status-danger #bpm{color:#e74c3c;animation: metalBeat 0.6s infinite;}
+.disconnected{border-color:#333;}
+.disconnected #bpm{color:#444;}
+@keyframes metalBeat{
+  0%,100%{opacity:1}
+  50%{opacity:0.7}
+}
+</style>
+</head>
+<body>
+<div id="wrap" class="metal-panel disconnected">
+  <span class="metal-label">HR</span>
+  <span id="bpm">--</span>
+  <span class="metal-desc">MAX: <span id="maxBpm">--</span></span>
+</div>
+
+<script>
+let socket, lastTime = Date.now(), status = 'disconnected';
+const bpm = document.getElementById('bpm');
+const maxBpm = document.getElementById('maxBpm');
+const wrap = document.getElementById('wrap');
+
+function connect(){
+  if(socket && [0,1].includes(socket.readyState)) return;
+  socket = new WebSocket('ws://127.0.0.1:8001');
+  socket.onmessage = e => {
+    try{
+      const d = JSON.parse(e.data);
+      lastTime = Date.now();
+      if(d.connected && d.heart_rate > 0){
+        bpm.innerText = d.heart_rate;
+        maxBpm.innerText = d.max_heart_rate || '--';
+        let st = 'status-normal';
+        if(d.heart_rate >= 120) st = 'status-danger';
+        else if(d.heart_rate >= 100) st = 'status-warning';
+        wrap.className = 'metal-panel ' + st;
+        status = st;
+      }else{
+        wrap.className = 'metal-panel disconnected';
+        bpm.innerText = '--';
+        maxBpm.innerText = '--';
+        status = 'disconnected';
+      }
+    }catch(err){}
+  };
+  socket.onclose = () => {
+    wrap.className = 'metal-panel disconnected';
+    setTimeout(connect, 5000);
+  };
+}
+setInterval(()=>{
+  if(status !== 'disconnected' && Date.now() - lastTime > 4000){
+    wrap.className = 'metal-panel disconnected';
+    status = 'disconnected';
+  }
+},1000);
+connect();
+</script>
+</body>
+</html>

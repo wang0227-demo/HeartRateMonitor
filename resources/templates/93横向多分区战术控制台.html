@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+body{background: transparent;padding:20px;margin:0}
+.tact-console{
+  width:300px;height:100px;display:flex;border:1px solid #3a5470;
+  font-family:Consolas;
+}
+.ct-block{
+  flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;
+  border-right:1px solid #3a5470;padding:0 10px;
+}
+.ct-block:last-child{border:none}
+.bl-title{font-size:11px;color:#7a98b8;margin-bottom:6px}
+#bpm{font-size:44px;color:#6cf}
+#maxBpm{font-size:22px;color:#bcd}
+#stateTxt{font-size:20px;color:#bcd}
+/*状态*/
+.status-normal #bpm{color:#6cf;text-shadow:0 0 6px #6cf}
+.status-warning #bpm{color:#fc3;text-shadow:0 0 6px #fc3}
+.status-danger #bpm{color:#f44;text-shadow:0 0 8px #f44;animation:beat 0.5s infinite}
+.disconnected #bpm,#maxBpm{color:#333;text-shadow:none}
+@keyframes beat{0%,100%{scale:1}50%{scale:1.06}}
+</style>
+</head>
+<body>
+<div id="wrap" class="tact-console disconnected">
+  <div class="ct-block">
+    <span class="bl-title">HEART RATE</span>
+    <span id="bpm">--</span>
+  </div>
+  <div class="ct-block">
+    <span class="bl-title">PEAK MAX</span>
+    <span id="maxBpm">--</span>
+  </div>
+  <div class="ct-block">
+    <span class="bl-title">STATUS</span>
+    <span id="stateTxt">OFFLINE</span>
+  </div>
+</div>
+<script>
+let socket,lastTime=Date.now(),status='disconnected';
+const bpm=document.getElementById('bpm'),maxBpm=document.getElementById('maxBpm'),wrap=document.getElementById('wrap'),stateTxt=document.getElementById('stateTxt');
+function connect(){
+  if(socket&&[0,1].includes(socket.readyState))return;
+  socket=new WebSocket('ws://127.0.0.1:8001');
+  socket.onmessage=e=>{
+    try{
+      const d=JSON.parse(e.data);lastTime=Date.now();
+      if(d.connected&&d.heart_rate>0){
+        bpm.innerText=d.heart_rate;maxBpm.innerText=d.max_heart_rate||'--';
+        let st='status-normal',txt='NORMAL';
+        if(d.heart_rate>=120){st='status-danger';txt='DANGER'}
+        else if(d.heart_rate>=100){st='status-warning';txt='WARNING'}
+        wrap.className='tact-console '+st;stateTxt.innerText=txt;status=st;
+      }else{updateDisconnect('OFF');}
+    }catch(err){}
+  }
+  socket.onclose=()=>{updateDisconnect('LOST');setTimeout(connect,5000)}
+}
+function updateDisconnect(t){
+  if(status==='disconnected')return;
+  wrap.className='tact-console disconnected';bpm.innerText=t;maxBpm.innerText='--';stateTxt.innerText='OFFLINE';status='disconnected';
+}
+setInterval(()=>{if(status!=='disconnected'&&Date.now()-lastTime>4000)updateDisconnect('WAIT')},1000);
+connect();
+</script>
+</body>
+</html>

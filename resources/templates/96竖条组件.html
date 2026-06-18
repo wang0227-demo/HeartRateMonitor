@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+body{background: transparent;padding:20px;margin:0}
+.side-vert{
+  width:70px;height:150px;background:rgba(0,0,0,0.45);border-radius:6px;
+  box-sizing: border-box;
+  border-left:3px solid #2288ff;padding:15px 5px;
+  display:flex;flex-direction:column;align-items:center;justify-content:space-around;
+  font-family:monospace;
+}
+#bpm{font-size:40px}
+.small-txt{font-size:10px;color:#aaa;}
+.status-normal{border-left-color:#2ecc71}
+.status-normal #bpm{color:#2ecc71}
+.status-warning{border-left-color:#f39c12}
+.status-warning #bpm{color:#f39c12}
+.status-danger{border-left-color:#e74c3c}
+.status-danger #bpm{color:#e74c3c;animation:pulse 0.6s infinite}
+.disconnected{border-left-color:#333}
+.disconnected #bpm{color:#444}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.6}}
+</style>
+</head>
+<body>
+<div id="wrap" class="side-vert disconnected">
+  <span class="small-txt">HR</span>
+  <span id="bpm">--</span>
+  <span class="small-txt">MAX <span id="maxBpm">--</span></span>
+</div>
+<script>
+let socket,lastTime=Date.now(),status='disconnected';
+const bpm=document.getElementById('bpm'),maxBpm=document.getElementById('maxBpm'),wrap=document.getElementById('wrap');
+function connect(){
+  if(socket&&[0,1].includes(socket.readyState))return;
+  socket=new WebSocket('ws://127.0.0.1:8001');
+  socket.onmessage=e=>{
+    try{
+      const d=JSON.parse(e.data);lastTime=Date.now();
+      if(d.connected&&d.heart_rate>0){
+        bpm.innerText=d.heart_rate;maxBpm.innerText=d.max_heart_rate||'--';
+        let st='status-normal';
+        if(d.heart_rate>=120)st='status-danger';
+        else if(d.heart_rate>=100)st='status-warning';
+        wrap.className='side-vert '+st;status=st;
+      }else{updateDisconnect()}
+    }catch(err){}
+  }
+  socket.onclose=()=>{updateDisconnect();setTimeout(connect,5000)}
+}
+function updateDisconnect(){
+  if(status==='disconnected')return;
+  wrap.className='side-vert disconnected';bpm.innerText='--';maxBpm.innerText='--';status='disconnected';
+}
+setInterval(()=>{if(status!=='disconnected'&&Date.now()-lastTime>4000)updateDisconnect()},1000);
+connect();
+</script>
+</body>
+</html>

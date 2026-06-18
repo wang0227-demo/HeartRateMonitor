@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { background: transparent; overflow: hidden; margin: 0; padding: 20px; }
+        /* 模拟像素字体风格，使用系统自带的等宽字体并大写 */
+        .container { 
+            display: flex; align-items: center; 
+            font-family: 'Courier New', Courier, monospace; 
+            font-weight: 900; text-transform: uppercase;
+            background: #000; border: 4px solid #fff;
+            padding: 15px 25px;
+            box-shadow: 6px 6px 0px rgba(0, 0, 0, 0.5); /* 硬边阴影 */
+            transition: all 0.3s;
+        }
+        .heart { margin-right: 20px; font-size: 45px; display: inline-block; }
+        #bpm { font-size: 70px; min-width: 95px; text-align: center; letter-spacing: -2px; }
+        
+        .max-info { display: flex; flex-direction: column; align-items: flex-start; margin-left: 20px; padding-left: 15px; border-left: 4px solid #333; }
+        .max-label { font-size: 14px; color: #aaa; margin-bottom: 2px; }
+        #maxBpm { font-size: 26px; color: #fff; }
+
+        /* 像素风特有的“逐帧”生硬跳动 (steps) */
+        @keyframes pixel-beat { 
+            0% { transform: scale(1); } 
+            50% { transform: scale(1.3); } 
+            100% { transform: scale(1); } 
+        }
+        @keyframes pixel-flash {
+            0%, 100% { opacity: 1; color: #fff; }
+            50% { opacity: 0.8; color: #ff0000; }
+        }
+
+        /* 纯正的复古色彩 */
+        .status-normal { color: #00ff00; border-color: #00ff00; }
+        .status-normal .heart { animation: pixel-beat 0.9s infinite steps(2); filter: hue-rotate(100deg); }
+
+        .status-warning { color: #ffff00; border-color: #ffff00; }
+        .status-warning .heart { animation: pixel-beat 0.5s infinite steps(2); filter: hue-rotate(45deg); }
+
+        .status-danger { color: #ff0000; border-color: #ff0000; }
+        .status-danger .heart { animation: pixel-beat 0.25s infinite steps(2); }
+        .status-danger #bpm { animation: pixel-flash 0.2s infinite steps(2); }
+
+        .disconnected { color: #555 !important; border-color: #333 !important; }
+        .disconnected .heart { animation: none !important; filter: grayscale(1); }
+    </style>
+</head>
+<body>
+    <div id="wrapper" class="container disconnected">
+        <span id="heartIcon" class="heart">💖</span>
+        <span id="bpm">--</span>
+        <div class="max-info">
+            <span class="max-label">MAX</span>
+            <span id="maxBpm">--</span>
+        </div>
+    </div>
+
+    <script>
+        let socket = null;
+        let lastMessageTime = Date.now();
+        let currentStatus = 'disconnected'; 
+        let currentHR = '--';
+        let currentMax = '--';
+        const bpmEl = document.getElementById('bpm');
+        const maxEl = document.getElementById('maxBpm');
+        const wrapper = document.getElementById('wrapper');
+
+        function connect() {
+            if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+            socket = new WebSocket('ws://127.0.0.1:8001');
+
+            socket.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    lastMessageTime = Date.now();
+                    if (data.connected && data.heart_rate > 0) {
+                        const hr = data.heart_rate;
+                        const max = data.max_heart_rate || '--';
+
+                        if (hr !== currentHR) { bpmEl.innerText = hr; currentHR = hr; }
+                        if (max !== currentMax) { maxEl.innerText = max; currentMax = max; }
+
+                        let targetStatus = 'status-normal';
+                        if (hr >= 120) targetStatus = 'status-danger';
+                        else if (hr >= 100) targetStatus = 'status-warning';
+
+                        if (currentStatus !== targetStatus) {
+                            wrapper.classList.remove('disconnected', 'status-normal', 'status-warning', 'status-danger');
+                            wrapper.classList.add(targetStatus);
+                            currentStatus = targetStatus;
+                        }
+                    } else { updateStateToDisconnected("OFF"); }
+                } catch (e) { console.error("Data error:", e); }
+            };
+
+            socket.onclose = () => { updateStateToDisconnected("LOST"); setTimeout(connect, 5000); };
+            socket.onerror = () => { socket.close(); };
+        }
+
+        function updateStateToDisconnected(text) {
+            if (currentStatus !== 'disconnected') {
+                wrapper.className = 'container disconnected';
+                bpmEl.innerText = text; maxEl.innerText = '--';
+                currentStatus = 'disconnected'; currentHR = '--'; currentMax = '--';
+            }
+        }
+
+        setInterval(() => {
+            if (currentStatus !== 'disconnected' && (Date.now() - lastMessageTime > 4000)) {
+                updateStateToDisconnected("WAIT");
+            }
+        }, 1000);
+
+        connect();
+    </script>
+</body>
+</html>

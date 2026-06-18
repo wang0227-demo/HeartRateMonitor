@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { background: transparent; overflow: hidden; margin: 0; padding: 20px; }
+        
+        /* 赛博朋克科技容器 */
+        .container { 
+            display: flex; 
+            align-items: center; 
+            font-family: 'Consolas', 'Courier New', monospace; 
+            background: rgba(10, 15, 28, 0.85);
+            border: 2px solid #00ff88;
+            border-radius: 4px;
+            padding: 15px 25px;
+            box-shadow: inset 0 0 15px rgba(0, 255, 136, 0.2), 0 0 20px rgba(0, 255, 136, 0.1);
+            position: relative;
+            clip-path: polygon(0 0, 95% 0, 100% 25%, 100% 100%, 5% 100%, 0 75%);
+            transition: all 0.3s ease;
+        }
+        
+        /* 脉冲能量图标 */
+        .heart { 
+            margin-right: 20px; 
+            font-size: 40px; 
+            font-weight: bold;
+            display: inline-block; 
+            will-change: transform, filter;
+        }
+        
+        /* 主数值 */
+        #bpm { font-size: 64px; font-weight: 900; min-width: 100px; text-align: center; letter-spacing: -2px; }
+        
+        /* 侧边信息区 */
+        .max-info { 
+            display: flex; 
+            flex-direction: column; 
+            align-items: flex-start; 
+            margin-left: 25px; 
+            border-left: 1px dashed rgba(255,255,255,0.2);
+            padding-left: 15px;
+        }
+        .max-label { font-size: 11px; color: rgba(255, 255, 255, 0.4); text-transform: uppercase; font-weight: bold; letter-spacing: 2px; }
+        #maxBpm { font-size: 26px; font-weight: bold; margin-top: 2px; }
+        
+        /* 动画效果 */
+        @keyframes pulse { 0% { transform: scale(1); opacity: 0.8; } 50% { transform: scale(1.2); opacity: 1; } 100% { transform: scale(1); opacity: 0.8; } }
+        @keyframes glitch { 0% { clip-path: inset(40% 0 61% 0); } 20% { clip-path: inset(92% 0 1% 0); } 40% { clip-path: inset(15% 0 80% 0); } 60% { clip-path: inset(80% 0 5% 0); } 80% { clip-path: inset(3% 0 92% 0); } 100% { clip-path: inset(40% 0 61% 0); } }
+        
+        /* 状态 1：正常（荧光绿） */
+        .status-normal { color: #00ffcc; border-color: #00ffcc; box-shadow: inset 0 0 15px rgba(0, 255, 204, 0.2), 0 0 20px rgba(0, 255, 204, 0.1); }
+        .status-normal .heart { animation: pulse 0.8s infinite ease-in-out; }
+        
+        /* 状态 2：警告（霓虹橙） */
+        .status-warning { color: #ffaa00; border-color: #ffaa00; box-shadow: inset 0 0 15px rgba(255, 170, 0, 0.2), 0 0 25px rgba(255, 170, 0, 0.3); }
+        .status-warning .heart { animation: pulse 0.4s infinite ease-in-out; }
+        
+        /* 状态 3：危险（警报红 + 故障抖动） */
+        .status-danger { color: #ff0055; border-color: #ff0055; box-shadow: inset 0 0 25px rgba(255, 0, 85, 0.4), 0 0 35px rgba(255, 0, 85, 0.5); }
+        .status-danger .heart { animation: pulse 0.2s infinite ease-in-out; }
+        .status-danger #bpm { position: relative; }
+        .status-danger #bpm::after { content: attr(data-text); position: absolute; left: 2px; text-shadow: -1px 0 #00ffff; top: 0; color: #ff0055; background: rgba(10,15,28,0.9); overflow: hidden; animation: glitch 0.3s infinite linear alternate-reverse; }
+
+        /* 断开连接 */
+        .disconnected { color: #4a5568 !important; border-color: #4a5568 !important; box-shadow: none !important; clip-path: none !important; opacity: 0.6; }
+        .disconnected .heart { animation: none !important; }
+    </style>
+</head>
+<body>
+    <div id="wrapper" class="container disconnected">
+        <span id="heartIcon" class="heart">⚡</span>
+        <span id="bpm" data-text="--">--</span>
+        <div class="max-info">
+            <span class="max-label">SYS.PEAK</span>
+            <span id="maxBpm">--</span>
+        </div>
+    </div>
+
+    <script>
+        let socket = null;
+        let lastMessageTime = Date.now();
+        let currentStatus = 'disconnected'; 
+        let currentHR = '--';
+        let currentMax = '--';
+
+        const bpmEl = document.getElementById('bpm');
+        const maxEl = document.getElementById('maxBpm');
+        const wrapper = document.getElementById('wrapper');
+
+        function connect() {
+            if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+            socket = new WebSocket('ws://127.0.0.1:8001');
+
+            socket.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    lastMessageTime = Date.now();
+
+                    if (data.connected && data.heart_rate > 0) {
+                        const hr = data.heart_rate;
+                        const max = data.max_heart_rate || '--';
+
+                        if (hr !== currentHR) {
+                            bpmEl.innerText = hr;
+                            bpmEl.setAttribute('data-text', hr); // 用于赛博朋克故障特效
+                            currentHR = hr;
+                        }
+                        if (max !== currentMax) {
+                            maxEl.innerText = max;
+                            currentMax = max;
+                        }
+
+                        let targetStatus = 'status-normal';
+                        if (hr >= 120) targetStatus = 'status-danger';
+                        else if (hr >= 100) targetStatus = 'status-warning';
+
+                        if (currentStatus !== targetStatus) {
+                            wrapper.classList.remove('disconnected', 'status-normal', 'status-warning', 'status-danger');
+                            wrapper.classList.add(targetStatus);
+                            currentStatus = targetStatus;
+                        }
+                    } else {
+                        updateStateToDisconnected("OFF");
+                    }
+                } catch (e) { console.error("Data error:", e); }
+            };
+
+            socket.onclose = () => { 
+                updateStateToDisconnected("LOST"); 
+                setTimeout(connect, 5000); 
+            };
+            socket.onerror = () => { socket.close(); };
+        }
+
+        function updateStateToDisconnected(text) {
+            if (currentStatus !== 'disconnected') {
+                wrapper.className = 'container disconnected';
+                bpmEl.innerText = text;
+                bpmEl.setAttribute('data-text', text);
+                maxEl.innerText = '--';
+                currentStatus = 'disconnected';
+                currentHR = '--';
+                currentMax = '--';
+            }
+        }
+
+        setInterval(() => {
+            if (currentStatus !== 'disconnected' && (Date.now() - lastMessageTime > 4000)) {
+                updateStateToDisconnected("WAIT");
+            }
+        }, 1000);
+
+        connect();
+    </script>
+</body>
+</html>

@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { background: transparent; overflow: hidden; margin: 0; padding: 20px; }
+        
+        /* 战术斜切卡片 */
+        .container { 
+            display: inline-flex;
+            flex-direction: column;
+            background: rgba(12, 16, 22, 0.85);
+            border-left: 3px solid var(--shield-color, #0099ff);
+            padding: 8px 18px 10px 18px;
+            font-family: 'Arial Black', sans-serif;
+            position: relative;
+        }
+
+        .main-row { display: flex; align-items: flex-end; }
+        
+        /* 硬朗数字 */
+        #bpm { 
+            font-size: 38px; font-weight: 900; color: #ffffff; line-height: 1;
+            min-width: 65px; text-align: left;
+        }
+        
+        .side-cell { display: flex; flex-direction: column; margin-left: 14px; line-height: 1; }
+        .tag { font-size: 8px; color: rgba(255,255,255,0.3); font-weight: bold; }
+        #maxBpm { font-size: 15px; color: rgba(255,255,255,0.7); font-weight: bold; margin-top: 2px; }
+        
+        /* 底部四段战术护盾槽 */
+        .shield-bar { display: flex; gap: 3px; margin-top: 6px; }
+        .shield-cell { 
+            width: 14px; height: 4px; 
+            background: var(--shield-color, #0099ff);
+            transition: background 0.3s;
+        }
+
+        /* 护盾破碎/过载时的流光跑马灯 */
+        @keyframes shield-flash {
+            0%, 100% { opacity: 0.3; }
+            50% { opacity: 1; }
+        }
+
+        /* 状态分配 */
+        .status-normal { --shield-color: #0099ff; }
+        
+        .status-warning { --shield-color: #ff9900; }
+        .status-warning #bpm { color: #ff9900; }
+
+        .status-danger { --shield-color: #ff0044; }
+        .status-danger #bpm { color: #ff0044; }
+        .status-danger .shield-cell { animation: shield-flash 0.3s infinite alternate; }
+        /* 模拟危机时护盾爆碎，只剩下最后一格血量 */
+        .status-danger .shield-cell:not(:first-child) { background: rgba(255,0,68,0.1) !important; animation: none; }
+
+        /* 系统碎甲断线 */
+        .disconnected { border-left-color: #20242b !important; background: rgba(5,5,5,0.5) !important; }
+        .disconnected #bpm { color: #20242b; font-size: 24px; }
+        .disconnected #maxBpm { color: #20242b; }
+        .disconnected .tag { color: #181b20; }
+        .disconnected .shield-cell { background: #181b20 !important; animation: none !important; }
+    </style>
+</head>
+<body>
+    <div id="wrapper" class="container disconnected">
+        <div class="main-row">
+            <span id="bpm">--</span>
+            <div class="side-cell">
+                <span class="tag">MAX CELL</span>
+                <span id="maxBpm">--</span>
+            </div>
+        </div>
+        <div class="shield-bar">
+            <div class="shield-cell"></div>
+            <div class="shield-cell"></div>
+            <div class="shield-cell"></div>
+            <div class="shield-cell"></div>
+        </div>
+    </div>
+
+    <script>
+        let socket = null;
+        let lastMessageTime = Date.now();
+        let currentStatus = 'disconnected'; 
+        let currentHR = '--';
+        let currentMax = '--';
+
+        const bpmEl = document.getElementById('bpm');
+        const maxEl = document.getElementById('maxBpm');
+        const wrapper = document.getElementById('wrapper');
+
+        function connect() {
+            if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+            socket = new WebSocket('ws://127.0.0.1:8001');
+
+            socket.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    lastMessageTime = Date.now();
+
+                    if (data.connected && data.heart_rate > 0) {
+                        const hr = data.heart_rate;
+                        const max = data.max_heart_rate || '--';
+
+                        if (hr !== currentHR) {
+                            bpmEl.innerText = hr;
+                            currentHR = hr;
+                        }
+                        if (max !== currentMax) {
+                            maxEl.innerText = max;
+                            currentMax = max;
+                        }
+
+                        let targetStatus = 'status-normal';
+                        if (hr >= 120) targetStatus = 'status-danger';
+                        else if (hr >= 100) targetStatus = 'status-warning';
+
+                        if (currentStatus !== targetStatus) {
+                            wrapper.classList.remove('disconnected', 'status-normal', 'status-warning', 'status-danger');
+                            wrapper.classList.add(targetStatus);
+                            currentStatus = targetStatus;
+                        }
+                    } else {
+                        updateStateToDisconnected("OFF");
+                    }
+                } catch (e) { console.error("Data error:", e); }
+            };
+
+            socket.onclose = () => { updateStateToDisconnected("LOST"); setTimeout(connect, 5000); };
+            socket.onerror = () => { socket.close(); };
+        }
+
+        function updateStateToDisconnected(text) {
+            if (currentStatus !== 'disconnected') {
+                wrapper.className = 'container disconnected';
+                bpmEl.innerText = text;
+                maxEl.innerText = '--';
+                currentStatus = 'disconnected';
+                currentHR = '--';
+                currentMax = '--';
+            }
+        }
+
+        setInterval(() => {
+            if (currentStatus !== 'disconnected' && (Date.now() - lastMessageTime > 4000)) {
+                updateStateToDisconnected("WAIT");
+            }
+        }, 1000);
+
+        connect();
+    </script>
+</body>
+</html>
