@@ -58,63 +58,117 @@
 
 
 ## 二、软件核心功能详解
+
 2.1 心率显示模板系统
+
 1.  内置资源：resources/templates 存放100 + 款独立 HTML 心率模板，样式覆盖电竞、赛博、机械、像素、心电、霓虹、极简、工业等；
+
 2.  预览方式：设备连接成功后，打开软件目录内「显示模板展示.html」一键预览全部模板效果；
+
 3.  模板逻辑：每款模板内置 3 套动态样式，根据心率自动切换：
+
 ￮ 正常：心率 ＜ 100
+
 ￮ 警告：100 ≤ 心率 ＜ 120
+
 ￮ 危险：心率 ≥ 120（闪烁、缩放、故障特效等强化动画）
+
 4.  传输参数（WebSocket/API 通用）
+
 | 参数名 | 说明 |
+
 | ---- | ---- |
+
 | heart_rate | 实时心率数值 |
+
 | max_heart_rate | 本次会话峰值心率 |
+
 | battery | 设备剩余电量百分比 |
+
 | rssi | 蓝牙信号强度 |
+
 | connected | 设备连接布尔状态 |
 
+
+
  <img src="https://github.com/wang0227-demo/HeartRateMonitor/blob/master/resources/demo1.png"/>
+
 (全参数模板效果展示)
 
+
+
  <img src="https://github.com/wang0227-demo/HeartRateMonitor/blob/master/resources/demo2.png"/>
+
 （部分显示效果展示）
 
+
 模板尺寸推荐
+
 ￮ 纯数字无波形：400 × 200
+
 ￮ 带心电趋势图：800 × 200
+
 ￮ 部分也适用满屏展示，请根据实际情况调整
 参考模板文件（根目录 resources\）
+
 • WebSocket 基础模板：obs_websocket.html、obs_websocket2.html
+
 • API 基础模板：obs_api.html、obs_api2.html
+
 • 全参数演示模板：全参数展示_websocket.html、全参数展示_API.html
 更多显示模板（根目录 resources\ templates\）
+
 • 该目录文件默认采用WebSocket模式,如果你想使用API 模式，请参考obs_api.html进行修改（一般只需要将<script></script>里面的内容替换掉即可）。
+
 2.2 多渠道心率输出方式
+
 方式 1：TXT 文本读取（简易 OBS 文字）
  
+
 1.  软件「实时状态」面板点亮文本图标；
+
 2.  程序根目录自动生成 obs_hr.txt；
+
 3.  OBS 添加源 → 文本 (GDI+) → 勾选「从文件读取」，选中该 txt 文件即可。
+
 方式 2：WebSocket 推送（推荐，端口 8001）
+
 1.  软件「WebSocket 服务器」勾选【开启服务】，默认端口 8001；
+
 2.  OBS 添加「浏览器源」，选择本地 HTML 模板文件；
+
 3.  模板默认对接 ws://127.0.0.1:8001，端口冲突可同步修改软件与 HTML 内端口号。
+
 方式 3：API 被动获取（端口 8000）
+
 1.  软件「API 服务器」勾选【开启服务】，默认端口 8000；
+
 2.  OBS 添加「浏览器源」，选择本地 HTML 模板文件；
+
 3.  使用 API 专用模板（或参考obs_api.html替换 JS 接口地址即可）。
+
 端口冲突处理：修改软件端口 → 全局搜索 HTML 内8000/8001批量替换。
+
 2.3 悬浮窗功能（游戏全屏常驻）
+
 1.  基础控制：显示 / 锁定、保存配置、鼠标穿透；
+
 2.  样式自定义：解锁色 / 锁定色自定义、自由缩放、自定义图片 / GIF；
+
 3.  内置动图素材路径：resources/heart1.gif ~ heart3.gif；
+
 4.  看板娘自定义：替换 resources/skins 下 GIF即可，且必须包含 pet_idle_1/2/3 这三个文件名的有效GIF文件。
+
 2.4 辅助配套功能
+
 1.  语音提醒：基础音效、高心率告警及音效；
+
 2.  设备监控：实时查看蓝牙信号 RSSI、设备电量、趋势图等信息；
+
 3.  峰值心率一键重置；
+
 4.  自动截屏（高能时刻触发，文件路径：\screenshots\）；
+
 5.  Webhook 第三方联动（飞书 / 钉钉 / IFTTT 等）。
 
 ## 🛠️ 依赖项清单
