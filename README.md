@@ -51,6 +51,7 @@
 
  <img src="https://github.com/wang0227-demo/HeartRateMonitor/blob/master/resources/demo2.png"/>
 （部分显示效果展示）
+
 模板尺寸推荐
 ￮ 纯数字无波形：400 × 200
 ￮ 带心电趋势图：800 × 200
@@ -89,15 +90,15 @@
 5.  Webhook 第三方联动（飞书 / 钉钉 / IFTTT 等）。
 
 ## 🛠️ 依赖项清单
-bleak==3.0.2
-keyboard==0.13.5
-obs_websocket_py==1.0
-Pillow==12.2.0
-PyInstaller==6.20.0
-pywin32==311
-Requests==2.34.2
-websockets==16.0
-python-osc==1.8.3
+- **bleak==3.0.2** 
+- **keyboard==0.13.5** 
+- **obs_websocket_py==1.0** 
+- **Pillow==12.2.0** 
+- **PyInstaller==6.20.0** 
+- **pywin32==311** 
+- **Requests==2.34.2** 
+- **websockets==16.0** 
+- **python-osc==1.8.3** 
 
 ## 🛠️开发者笔记
 本项目基于[HeartRateMonitor]的功能逻辑进行二次开发。通过对底层代码的彻底重构和逻辑优化，显着增强了系统的可扩展性和维护性。大幅提升了运行效率及稳定性。
