@@ -224,4 +224,7 @@
 ## 🛠️开发者笔记
 本项目基于<a href="https://github.com/ccc007ccc/HeartRateMonitor">[HeartRateMonitor]</a>的功能逻辑进行二次开发。
 通过对底层代码的彻底重构与逻辑优化，显著增强了系统的可扩展性与维护性。大幅提升了运行效率及稳定性。
+<<<<<<< HEAD
+>>>>>>> 650a7d8d95f41ae5c9e6ce9ab1046563507c9f9a
+=======
 >>>>>>> 650a7d8d95f41ae5c9e6ce9ab1046563507c9f9a
