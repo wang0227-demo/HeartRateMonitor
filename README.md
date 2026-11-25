@@ -9,7 +9,7 @@
     <img src="https://img.shields.io/badge/Platform-Windows-0078D6?style=flat-square&logo=windows" alt="Platform" />
     <img src="https://img.shields.io/badge/Tech-Tauri%20%2B%20React%20%2B%20Python-10b981?style=flat-square" alt="Tech Stack" />
     <a href="https://qm.qq.com/q/X6rnS0WBUI">
-      <img src="https://img.shields.io/badge/QQ%E4%BA%A4%E6%B5%81%E7%BE%A4-点击加入-12B7F5?style=flat-square&logo=tencent-qq" alt="QQ Group" />
+      <img src="https://img.shields.io/badge/QQ%E4%BA%A4%E6%B5%81%E7%BE%A4-%E7%82%B9%E5%87%BB%E5%8A%A0%E5%85%A5-12B7F5?style=flat-square&logo=tencent-qq" alt="QQ Group" />
     </a>
   </p>
 </div>
@@ -43,9 +43,13 @@
 * **桌面级透明挂件**：支持无边框置顶显示、滚轮/滑块自由无极缩放（`0.4x ~ 1.6x`）、鼠标穿透锁定以及全局快捷键呼出。
 * **OBS 窗口采集友好**：支持独立配置挂件与房间窗口的任务栏显示开关，完美适配 OBS Studio 窗口采集与浏览器源接入。
 
-| 156 套挂件随心换 | 多风格实时展示 |
-| :---: | :---: |
-| ![156套挂件直播随心换](./resources/doc/3.jpg) | ![心率挂件展示](./resources/doc/6.jpg) |
+| 156 套挂件随心换 |
+| :---: |
+| ![156套挂件直播随心换](./resources/doc/3.jpg) |
+
+| 多风格实时展示 |
+| :---: |
+| ![心率挂件展示](./resources/doc/6.jpg) |
 
 ### 4. 🎬 全生态直播与虚拟主播联动
 * **OBS Studio 深度联动**：内置本地 OBS WebSocket（默认端口 `4455`）控制，支持**受惊自动切换场景 / 触发滤镜**，以及高能时刻**自动保存 OBS 回放缓存**。
@@ -56,9 +60,13 @@
 * **HIIT 科学跟跳模式**：内置循序渐进、标准循环、智能高强度等多种训练课程，结合心率区间提供实时强度反馈、连击（COMBO）与能量加成激励。
 * **心率历史趋势看板**：支持全天候趋势回看、峰值/静息对比、异常波动追踪与休闲心率小游戏。
 
-| HIIT 科学跟练 | 心率历史分析 |
-| :---: | :---: |
-| ![HIIT科学跟练](./resources/doc/4.jpg) | ![心率历史](./resources/doc/5.jpg) |
+| HIIT 科学跟练 |
+| :---: |
+| ![HIIT科学跟练](./resources/doc/4.jpg) |
+
+| 心率历史分析 |
+| :---: |
+| ![心率历史](./resources/doc/5.jpg) |
 
 ---
 
