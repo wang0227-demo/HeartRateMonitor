@@ -94,6 +94,5 @@
 
 ## 💬 社区与反馈
 
-<<<<<<< HEAD
 * **最新版本下载**：[GitHub Releases](https://github.com/wang0227-demo/HeartRateMonitor/releases)
 * **官方交流群**：[点击加入 QQ 交流群](https://qm.qq.com/q/X6rnS0WBUI)（获取使用教程、设备兼容性列表及最新内测动态）
